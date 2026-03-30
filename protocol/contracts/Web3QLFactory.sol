@@ -1,0 +1,146 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import "./Web3QLDatabase.sol";
+import "./Web3QLTable.sol";
+
+/**
+ * @title  Web3QLFactory
+ * @notice Singleton factory deployed once on Celo.
+ *
+ *         Any user calls createDatabase() to deploy a personal
+ *         Web3QLDatabase contract (as a UUPS proxy).  The factory
+ *         tracks all databases per owner.
+ *
+ *         Both the Database and Table proxies share implementation
+ *         contracts managed here, keeping per-user deployment cost
+ *         minimal (only proxy creation overhead ~ 45k gas each).
+ *
+ * @dev    The factory itself is UUPS-upgradeable so the Web3QL team
+ *         can push improvements without redeploying user databases.
+ */
+contract Web3QLFactory is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable
+{
+    // ─────────────────────────────────────────────────────────────
+    //  State
+    // ─────────────────────────────────────────────────────────────
+
+    /// Shared implementation contracts (upgraded by factory owner).
+    address public databaseImplementation;
+    address public tableImplementation;
+
+    /// user → list of database proxy addresses
+    mapping(address => address[]) private _userDatabases;
+
+    /// All deployed databases (for admin enumeration)
+    address[] private _allDatabases;
+
+    // ─────────────────────────────────────────────────────────────
+    //  Events
+    // ─────────────────────────────────────────────────────────────
+
+    event DatabaseCreated(
+        address indexed owner,
+        address indexed db,
+        uint256 indexed index
+    );
+    event ImplementationsUpdated(address dbImpl, address tableImpl);
+
+    // ─────────────────────────────────────────────────────────────
+    //  Initializer
+    // ─────────────────────────────────────────────────────────────
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() { _disableInitializers(); }
+
+    /**
+     * @param _owner               Protocol admin (multisig recommended).
+     * @param _databaseImpl        Address of the deployed Web3QLDatabase logic.
+     * @param _tableImpl           Address of the deployed Web3QLTable logic.
+     */
+    function initialize(
+        address _owner,
+        address _databaseImpl,
+        address _tableImpl
+    ) external initializer {
+        __Ownable_init(_owner);
+        __UUPSUpgradeable_init();
+        require(_databaseImpl != address(0), "Web3QLFactory: zero databaseImpl");
+        require(_tableImpl    != address(0), "Web3QLFactory: zero tableImpl");
+        databaseImplementation = _databaseImpl;
+        tableImplementation    = _tableImpl;
+    }
+
+    function _authorizeUpgrade(address) internal override onlyOwner {}
+
+    // ─────────────────────────────────────────────────────────────
+    //  Core: create a database
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Deploy a new Web3QLDatabase owned by msg.sender.
+     * @return db  Address of the new database proxy.
+     *
+     * @dev  The database proxy is initialised with:
+     *         - owner = msg.sender
+     *         - tableImplementation = factory.tableImplementation
+     *       so the user controls their own database independently of the
+     *       factory after deployment.
+     */
+    function createDatabase() external returns (address db) {
+        bytes memory initData = abi.encodeCall(
+            Web3QLDatabase.initialize,
+            (msg.sender, tableImplementation)
+        );
+
+        db = address(new ERC1967Proxy(databaseImplementation, initData));
+
+        _userDatabases[msg.sender].push(db);
+        _allDatabases.push(db);
+
+        emit DatabaseCreated(msg.sender, db, _allDatabases.length - 1);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    //  Views
+    // ─────────────────────────────────────────────────────────────
+
+    function getUserDatabases(address user) external view returns (address[] memory) {
+        return _userDatabases[user];
+    }
+
+    function databaseCount() external view returns (uint256) {
+        return _allDatabases.length;
+    }
+
+    function getDatabaseAt(uint256 index) external view returns (address) {
+        return _allDatabases[index];
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    //  Admin: upgrade shared implementations
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Update the reference implementation contracts.
+     *         Does NOT auto-upgrade existing proxies — each database /
+     *         table proxy must be individually upgraded via upgradeToAndCall.
+     */
+    function setImplementations(
+        address newDatabaseImpl,
+        address newTableImpl
+    ) external onlyOwner {
+        require(newDatabaseImpl != address(0), "Web3QLFactory: zero databaseImpl");
+        require(newTableImpl    != address(0), "Web3QLFactory: zero tableImpl");
+        databaseImplementation = newDatabaseImpl;
+        tableImplementation    = newTableImpl;
+        emit ImplementationsUpdated(newDatabaseImpl, newTableImpl);
+    }
+}

@@ -1,0 +1,8 @@
+{
+  "_comment": "Web3QL Protocol — deployment configuration. Populated by scripts/deploy-factory.ts",
+  "network"        : "celo",
+  "rpc"            : "https://forno.celo.org",
+  "factoryAddress" : "",
+  "databaseImpl"   : "",
+  "tableImpl"      : ""
+}

@@ -1,0 +1,11 @@
+# protocol-specific overrides
+# (root .gitignore handles node_modules, .env*, .env.keys, build outputs, etc.)
+
+# Hardhat compilation cache
+artifacts/
+cache/
+typechain-types/
+
+# Allow the deployment config (tracks live addresses in version control)
+# Uncomment to ignore it instead:
+# web3ql.config.json

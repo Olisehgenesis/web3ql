@@ -1,0 +1,34 @@
+{
+  "name": "@web3ql/sdk",
+  "version": "0.2.0",
+  "description": "Web3QL client SDK — end-to-end encrypted SQL-like storage on Celo. NaCl encryption, UUPS proxy contracts, full TypeScript.",
+  "keywords": ["web3", "sql", "encrypted-storage", "celo", "nacl", "e2e-encryption"],
+  "license": "MIT",
+  "type": "module",
+  "main":    "./dist/src/index.js",
+  "types":   "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/src/index.js",
+      "types":  "./dist/src/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build":   "tsc",
+    "dev":     "tsc --watch",
+    "clean":   "rm -rf dist"
+  },
+  "dependencies": {
+    "@noble/hashes":    "^1.4.0",
+    "@dotenvx/dotenvx": "^1.0.0",
+    "ethers":           "^6.13.1",
+    "tweetnacl":        "^1.0.3"
+  },
+  "devDependencies": {
+    "@types/node":   "^20.14.10",
+    "typescript":    "^5.5.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
