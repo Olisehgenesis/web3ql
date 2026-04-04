@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Circle,
   ExternalLink,
+  BookOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store'
@@ -23,6 +24,7 @@ const NAV_MAIN = [
   { href: '/databases', label: 'Databases',  icon: Database },
   { href: '/tables',    label: 'Tables',     icon: Table2 },
   { href: '/test',      label: 'Explorer',   icon: Circle },
+  { href: '/docs',      label: 'Docs',       icon: BookOpen },
 ]
 
 const NAV_SETTINGS = [
