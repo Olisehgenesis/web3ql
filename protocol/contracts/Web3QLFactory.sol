@@ -71,7 +71,6 @@ contract Web3QLFactory is
         address _tableImpl
     ) external initializer {
         __Ownable_init(_owner);
-        __UUPSUpgradeable_init();
         require(_databaseImpl != address(0), "Web3QLFactory: zero databaseImpl");
         require(_tableImpl    != address(0), "Web3QLFactory: zero tableImpl");
         databaseImplementation = _databaseImpl;
@@ -94,10 +93,10 @@ contract Web3QLFactory is
      *       so the user controls their own database independently of the
      *       factory after deployment.
      */
-    function createDatabase() external returns (address db) {
+    function createDatabase(string calldata name) external returns (address db) {
         bytes memory initData = abi.encodeCall(
             Web3QLDatabase.initialize,
-            (msg.sender, tableImplementation)
+            (msg.sender, tableImplementation, name)
         );
 
         db = address(new ERC1967Proxy(databaseImplementation, initData));

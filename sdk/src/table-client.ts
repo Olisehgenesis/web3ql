@@ -75,6 +75,11 @@ const TABLE_ABI = [
   'function recordExists(bytes32 key) external view returns (bool)',
   'function recordOwner(bytes32 key) external view returns (address)',
   'function collaboratorCount(bytes32 key) external view returns (uint8)',
+  'function getCollaborators(bytes32 key) external view returns (address[] memory)',
+  'function getRole(bytes32 resource, address user) external view returns (uint8)',
+  // owner record enumeration
+  'function ownerRecordCount(address addr) external view returns (uint256)',
+  'function getOwnerRecords(address addr, uint256 start, uint256 limit) external view returns (bytes32[] memory)',
   // table metadata
   'function tableName() external view returns (string memory)',
 ] as const;
@@ -107,14 +112,13 @@ export class EncryptedTableClient {
 
   /**
    * Derive the bytes32 on-chain record key from a table name + primary key.
-   * e.g. key(1n) for table "users" → keccak256(abi.encode("users", 1))
+   * Canonical scheme: keccak256(abi.encodePacked(tableName, id))
+   * Matches the Solidity generator and connector — all three layers are aligned.
    */
-  protected deriveKey(tableName: string, id: bigint): string {
-    return ethers.keccak256(
-      ethers.AbiCoder.defaultAbiCoder().encode(
-        ['string', 'uint256'],
-        [tableName, id],
-      ),
+  deriveKey(tableName: string, id: bigint): string {
+    return ethers.solidityPackedKeccak256(
+      ['string', 'uint256'],
+      [tableName, id],
     );
   }
 
@@ -327,6 +331,20 @@ export class EncryptedTableClient {
 
   async collaboratorCount(key: string): Promise<number> {
     return Number(await this.contract.collaboratorCount(key));
+  }
+
+  /** List bytes32 record keys owned by `addr` (paginated). */
+  async listOwnerRecords(
+    addr  : string,
+    start : bigint = 0n,
+    limit : bigint = 50n,
+  ): Promise<string[]> {
+    return this.contract.getOwnerRecords(addr, start, limit);
+  }
+
+  /** Total number of records written by `addr` (including deleted). */
+  async ownerRecordCount(addr: string): Promise<bigint> {
+    return this.contract.ownerRecordCount(addr);
   }
 }
 

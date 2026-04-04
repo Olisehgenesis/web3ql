@@ -29,6 +29,9 @@ contract Web3QLDatabase is
     /// Shared Web3QLTable implementation address (set by Factory on init).
     address public tableImplementation;
 
+    /// Human-readable database name.
+    string public databaseName;
+
     /// name → table proxy address
     mapping(string => address) public tables;
 
@@ -50,11 +53,12 @@ contract Web3QLDatabase is
 
     function initialize(
         address _owner,
-        address _tableImplementation
+        address _tableImplementation,
+        string calldata _name
     ) external initializer {
         __Ownable_init(_owner);
-        __UUPSUpgradeable_init();
         tableImplementation = _tableImplementation;
+        databaseName = _name;
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}

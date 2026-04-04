@@ -1,0 +1,23 @@
+{
+  "name": "web3ql-connector",
+  "version": "1.0.0",
+  "description": "Web3QL REST connector — Express router for interacting with on-chain encrypted tables",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node api/server.js",
+    "dev":   "node --watch api/server.js",
+    "test":  "node --test tests/keyManager.test.js",
+    "test:relay": "node --test tests/relay.test.js"
+  },
+  "dependencies": {
+    "@noble/hashes":      "^1.4.0",
+    "ethers":             "^6.13.1",
+    "express":            "^4.19.2",
+    "express-rate-limit": "^7.3.1",
+    "tweetnacl":          "^1.0.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

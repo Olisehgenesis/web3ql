@@ -1,26 +1,68 @@
+# ════════════════════════════════════════════════════════════════════════════
+#  Web3QL — monorepo .gitignore
+#  Workspaces: cloud/ (Next.js)  •  protocol/ (Hardhat)  •  sdk/
+# ════════════════════════════════════════════════════════════════════════════
+
 # ─── Dependencies ────────────────────────────────────────────────────────────
-node_modules/
+**/node_modules/
 .pnp
 .pnp.js
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# ─── Secrets — NEVER commit these ────────────────────────────────────────────
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+.env.staging
+**/.env
+**/.env.local
+**/.env.*
+!**/.env.example       # keep example templates
+.env.keys              # dotenvx master decryption key
+**/.env.keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
 
 # ─── Build outputs ────────────────────────────────────────────────────────────
 dist/
 build/
 out/
-lib/
 *.tsbuildinfo
+**/tsconfig.tsbuildinfo
 
-# ─── Hardhat / Solidity ───────────────────────────────────────────────────────
-artifacts/
-cache/
-typechain-types/
-deployments/
+# Next.js
+cloud/.next/
+cloud/out/
 
-# ─── Secrets — NEVER commit these ────────────────────────────────────────────
-.env
-.env.*
-!.env.example        # allow the template
-.env.keys            # dotenvx decryption key
+# ─── Hardhat / Solidity (protocol/) ─────────────────────────────────────────
+protocol/artifacts/
+protocol/cache/
+protocol/typechain-types/
+# deployments/ is intentionally tracked (records live contract addresses)
+
+# ─── SDK compiled output ─────────────────────────────────────────────────────
+sdk/dist/
+sdk/lib/
+
+# ─── Test & coverage ─────────────────────────────────────────────────────────
+coverage/
+**/coverage/
+.nyc_output/
+**/.nyc_output/
+lcov.info
+*.lcov
 
 # ─── Logs ─────────────────────────────────────────────────────────────────────
 *.log
@@ -28,22 +70,26 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
+.pnpm-debug.log*
 
-# ─── Test & coverage ─────────────────────────────────────────────────────────
-coverage/
-.nyc_output/
+# ─── Caches ───────────────────────────────────────────────────────────────────
+.eslintcache
+.stylelintcache
+.parcel-cache/
+.turbo/
+.cache/
+**/.cache/
+.swc/
 
-# ─── Lock files (keep one, ignore the others) ────────────────────────────────
-# Uncomment the lock files you are NOT using:
-# package-lock.json
-# yarn.lock
-# pnpm-lock.yaml
+# ─── Vercel / deployment ─────────────────────────────────────────────────────
+.vercel
+.netlify
 
-# ─── Editor & OS ─────────────────────────────────────────────────────────────
-.DS_Store
-Thumbs.db
+# ─── Editor & IDE ─────────────────────────────────────────────────────────────
 .idea/
 .vscode/
+!.vscode/extensions.json  # keep recommended extensions list if present
 *.suo
 *.ntvs*
 *.njsproj
@@ -51,9 +97,28 @@ Thumbs.db
 *.swp
 *.swo
 *~
+*.orig
 
-# ─── Temporary files ─────────────────────────────────────────────────────────
+# ─── OS artefacts ─────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ─── Temporary / scratch ──────────────────────────────────────────────────────
 tmp/
 temp/
+scratch/
 *.tmp
 *.bak
+*.patch
+
+# ─── Package manager lock files ───────────────────────────────────────────────
+# Root uses pnpm workspaces. Sub-packages each have their own pnpm-lock.yaml.
+# npm / yarn lock files from accidental installs are noise:
+package-lock.json
+yarn.lock

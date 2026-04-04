@@ -114,11 +114,11 @@ abstract contract Web3QLAccess {
     //  Public mutators (callable by contracts that inherit this)
     // ─────────────────────────────────────────────────────────────
 
-    function grantRole(bytes32 resource, address user, Role role) external {
+    function grantRole(bytes32 resource, address user, Role role) external virtual {
         _grantRole(resource, user, role);
     }
 
-    function revokeRole(bytes32 resource, address user) external {
+    function revokeRole(bytes32 resource, address user) external virtual {
         _revokeRole(resource, user);
     }
 }

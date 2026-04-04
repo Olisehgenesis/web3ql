@@ -19,9 +19,15 @@ export { EncryptedTableClient, Role }         from './table-client.js';
 export type { RawRecord }                     from './table-client.js';
 export { PublicKeyRegistryClient }            from './registry.js';
 
+// High-level typed API (Prisma-style)
+export { TypedTableClient }                   from './typed-table.js';
+export type { FindManyOptions, RecordWithId } from './typed-table.js';
+
 // Crypto primitives (available for advanced use)
 export {
-  deriveKeypair,
+  KEY_DERIVATION_MESSAGE,
+  deriveKeypairFromWallet,  // ✅ browser-compatible (recommended)
+  deriveKeypair,            // ⚠️  deprecated: different keypair from browser
   publicKeyFromPrivate,
   generateSymmetricKey,
   encryptData,

@@ -11,6 +11,8 @@
     "deploy:local":     "dotenvx run -- hardhat run scripts/deploy-factory.ts --network localhost",
     "deploy:sepolia":   "dotenvx run -- hardhat run scripts/deploy-factory.ts --network celoSepolia",
     "deploy:celo":      "dotenvx run -- hardhat run scripts/deploy-factory.ts --network celo",
+    "deploy:cloud":     "dotenvx run -- hardhat run scripts/deploy-cloud.ts --network celoSepolia",
+    "deploy:cloud:celo":"dotenvx run -- hardhat run scripts/deploy-cloud.ts --network celo",
     "typechain":        "hardhat typechain",
     "clean":            "hardhat clean",
     "init":             "dotenvx run -- ts-node --esm scripts/init-project.ts"

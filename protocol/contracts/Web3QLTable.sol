@@ -68,6 +68,15 @@ contract Web3QLTable is
     /// Ordered collaborator list (owner at index 0) — used for delete sweep.
     mapping(bytes32 => address[]) internal _collaborators;
 
+    /// Total unique record keys ever created (never decremented).
+    uint256 public totalRecords;
+
+    /// Current non-deleted record count.
+    uint256 public activeRecords;
+
+    /// Owner → append-only list of record keys they have written.
+    mapping(address => bytes32[]) private _ownerKeys;
+
     // ─────────────────────────────────────────────────────────────
     //  Events
     // ─────────────────────────────────────────────────────────────
@@ -91,7 +100,6 @@ contract Web3QLTable is
         bytes   calldata _schemaBytes
     ) external initializer {
         __Ownable_init(_owner);
-        __UUPSUpgradeable_init();
         tableName   = _tableName;
         schemaBytes = _schemaBytes;
     }
@@ -121,6 +129,8 @@ contract Web3QLTable is
         require(ciphertext.length  > 0, "Web3QLTable: empty ciphertext");
         require(encryptedKey.length > 0, "Web3QLTable: empty encryptedKey");
 
+        bool isNew = (rec.owner == address(0));
+
         if (rec.deleted) {
             // Reuse slot — reset collaborator list
             delete _collaborators[key];
@@ -135,6 +145,12 @@ contract Web3QLTable is
 
         _encryptedKeys[key][msg.sender] = encryptedKey;
         _collaborators[key].push(msg.sender);
+
+        if (isNew) {
+            totalRecords++;
+        }
+        activeRecords++;
+        _ownerKeys[msg.sender].push(key);
 
         // Grant OWNER role scoped to this record key
         _setOwner(key, msg.sender);
@@ -239,6 +255,7 @@ contract Web3QLTable is
         rec.version             += 1;
         rec.updatedAt           = block.timestamp;
         rec.collaboratorCount   = 0;
+        activeRecords--;
 
         emit RecordDeleted(key, msg.sender, rec.version, rec.updatedAt);
     }
@@ -329,7 +346,45 @@ contract Web3QLTable is
         return _records[key].collaboratorCount;
     }
 
+    function getCollaborators(bytes32 key) external view returns (address[] memory) {
+        return _collaborators[key];
+    }
+
+    function ownerRecordCount(address addr) external view returns (uint256) {
+        return _ownerKeys[addr].length;
+    }
+
+    function getOwnerRecords(
+        address addr,
+        uint256 start,
+        uint256 limit
+    ) external view returns (bytes32[] memory result) {
+        bytes32[] storage keys = _ownerKeys[addr];
+        uint256 end = start + limit;
+        if (end > keys.length) end = keys.length;
+        if (start >= end) return result;
+        result = new bytes32[](end - start);
+        for (uint256 i = start; i < end; ) {
+            result[i - start] = keys[i];
+            unchecked { ++i; }
+        }
+    }
+
     function tableKey() external view returns (bytes32) {
         return keccak256(abi.encodePacked(address(this)));
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    //  Security: block inherited role bypass paths
+    // ─────────────────────────────────────────────────────────────
+
+    /// @notice Disabled — use grantAccess() which stores the encrypted key.
+    function grantRole(bytes32, address, Role) external pure override {
+        revert("Web3QLTable: use grantAccess()");
+    }
+
+    /// @notice Disabled — use revokeAccess() which scrubs the encrypted key.
+    function revokeRole(bytes32, address) external pure override {
+        revert("Web3QLTable: use revokeAccess()");
     }
 }

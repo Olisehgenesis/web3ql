@@ -32,10 +32,11 @@ import type { EncryptionKeypair }               from './crypto.js';
 // ─────────────────────────────────────────────────────────────
 
 const FACTORY_ABI = [
-  'function createDatabase() external returns (address)',
+  'function createDatabase(string calldata name) external returns (address)',
   'function getUserDatabases(address user) external view returns (address[] memory)',
   'function databaseImplementation() external view returns (address)',
   'function tableImplementation() external view returns (address)',
+  'function databaseCount() external view returns (uint256)',
   'event DatabaseCreated(address indexed owner, address indexed db, uint256 indexed index)',
 ] as const;
 
@@ -154,9 +155,10 @@ export class Web3QLClient {
   /**
    * Create a new personal database for the calling wallet.
    * Most users only ever need one database — use getOrCreateDatabase().
+   * @param name  Human-readable label stored immutably on-chain.
    */
-  async createDatabase(): Promise<DatabaseClient> {
-    const tx      = await this.factory.createDatabase();
+  async createDatabase(name: string = ''): Promise<DatabaseClient> {
+    const tx      = await this.factory.createDatabase(name);
     const receipt = await tx.wait() as ethers.TransactionReceipt;
 
     const iface = new ethers.Interface(FACTORY_ABI);
@@ -186,13 +188,14 @@ export class Web3QLClient {
   /**
    * Return the first existing database for the caller, or create one
    * if none exists.  Idempotent — safe to call on every app startup.
+   * @param name  Passed to createDatabase() only when a new one is created.
    */
-  async getOrCreateDatabase(): Promise<DatabaseClient> {
+  async getOrCreateDatabase(name: string = ''): Promise<DatabaseClient> {
     const dbs = await this.getDatabases();
     if (dbs.length > 0) {
       return new DatabaseClient(dbs[0]!, this.signer, this.keypair);
     }
-    return this.createDatabase();
+    return this.createDatabase(name);
   }
 
   /**

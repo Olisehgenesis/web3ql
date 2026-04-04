@@ -1,8 +1,23 @@
 {
   "_comment": "Web3QL Protocol — deployment configuration. Populated by scripts/deploy-factory.ts",
-  "network"        : "celo",
-  "rpc"            : "https://forno.celo.org",
-  "factoryAddress" : "",
-  "databaseImpl"   : "",
-  "tableImpl"      : ""
+  "network": "celo",
+  "rpc": "https://forno.celo.org",
+  "factoryAddress": "",
+  "databaseImpl": "",
+  "tableImpl": "",
+  "celoSepolia_11142220": {
+    "factoryAddress": "0x61837Bd14663eEdd3D41E6e12642146C07222EaD",
+    "databaseImpl": "0xDC2B502b0B73522E2f6764745744577cdA3caC1D",
+    "tableImpl": "0x0a808202BC2E35c6E903B0D1C84A0a03a08ADFF4",
+    "deployedAt": "2026-03-30T09:13:06.838Z",
+    "deployer": "0xB8f936be2B12406391B4232647593Cdb62dF2203"
+  },
+  "celoSepolia": {
+    "factoryAddress": "0x2cfE616062261927fCcC727333d6dD3D5880FDd1",
+    "databaseImpl": "0x54d136CcdD9E9865803280ca6254D10130a3495b",
+    "tableImpl": "0xd14deBb23004b93d731E00C320C389D9A4B933c6",
+    "registryAddress": "0x6379ee47C5087e200589Ea4F03141fc85ec53101",
+    "deployedAt": "2026-04-04T10:00:53.930Z",
+    "deployer": "0xB8f936be2B12406391B4232647593Cdb62dF2203"
+  }
 }

@@ -53,7 +53,7 @@ export class PublicKeyRegistryClient {
    * Register the caller's encryption public key on-chain.
    * Call this once per wallet — ~40k gas on Celo (~$0.001).
    *
-   * @param keypair   Your EncryptionKeypair from deriveKeypair(ethPrivateKey).
+   * @param keypair   Your EncryptionKeypair from deriveKeypairFromWallet(signer).
    */
   async register(keypair: EncryptionKeypair): Promise<ethers.TransactionReceipt> {
     const hex = publicKeyToHex(keypair.publicKey);

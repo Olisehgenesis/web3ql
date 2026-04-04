@@ -30,6 +30,7 @@
 import nacl           from 'tweetnacl';
 import { sha256 }     from '@noble/hashes/sha256';
 import { hexToBytes } from '@noble/hashes/utils';
+import type { Signer } from 'ethers';
 
 // ─────────────────────────────────────────────────────────────
 //  Types
@@ -46,10 +47,41 @@ export interface EncryptionKeypair {
 //  Keypair derivation
 // ─────────────────────────────────────────────────────────────
 
+/** Message signed by the wallet to derive the X25519 keypair.
+ *  Must be identical to the constant in cloud/lib/browser-crypto.ts so
+ *  browser and SDK produce the same keypair for the same wallet.
+ */
+export const KEY_DERIVATION_MESSAGE = 'Web3QL encryption key derivation v1';
+
+/**
+ * Derive an X25519 keypair from an ethers Signer by signing a fixed
+ * derivation message.  Because Ethereum personal_sign (RFC 6979) is
+ * deterministic, the same wallet always produces the same keypair.
+ *
+ * ✅ Use this when both SDK and browser clients need to share the same
+ *    encryption identity — the resulting pubkey matches what the browser
+ *    derives via `deriveKeypairFromSignature` in browser-crypto.ts.
+ *
+ * @param signer  Any ethers v6 Signer (e.g. `new ethers.Wallet(privKey)`).
+ */
+export async function deriveKeypairFromWallet(
+  signer: Signer,
+): Promise<EncryptionKeypair> {
+  const sig     = await signer.signMessage(KEY_DERIVATION_MESSAGE);
+  const sigHex  = sig.startsWith('0x') ? sig.slice(2) : sig;
+  const seed    = sha256(hexToBytes(sigHex));
+  const kp      = nacl.box.keyPair.fromSecretKey(seed);
+  return { publicKey: kp.publicKey, privateKey: kp.secretKey };
+}
+
 /**
  * Derive an X25519 encryption keypair from an Ethereum private key.
- * The Ethereum private key is never stored or transmitted — it is
- * hashed once to produce the 32-byte X25519 seed.
+ *
+ * @deprecated Prefer `deriveKeypairFromWallet(signer)` — it produces a
+ *   keypair that is compatible with the Web3QL browser Explorer and any
+ *   other client that uses wallet-signature derivation.  Raw-private-key
+ *   derivation generates a DIFFERENT keypair, so records written with this
+ *   function cannot be decrypted in the browser (and vice-versa).
  *
  * @param ethPrivateKey  Hex string, with or without "0x" prefix.
  */
