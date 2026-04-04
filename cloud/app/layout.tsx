@@ -19,6 +19,31 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: 'Web3QL Cloud',
   description: '100% on-chain SQL database dashboard — powered by Celo',
+  icons: {
+    icon: '/web3ql.png',
+    apple: '/web3ql.png',
+  },
+  openGraph: {
+    title: 'Web3QL Cloud',
+    description: 'Deploy encrypted SQL databases as smart contracts on Celo. No servers. No backend.',
+    url: 'https://web3ql.xyz',
+    siteName: 'Web3QL Cloud',
+    images: [
+      {
+        url: '/web3ql.png',
+        width: 400,
+        height: 400,
+        alt: 'Web3QL Logo',
+      },
+    ],
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Web3QL Cloud',
+    description: 'Deploy encrypted SQL databases as smart contracts on Celo.',
+    images: ['/web3ql.png'],
+  },
 };
 
 export default async function RootLayout({

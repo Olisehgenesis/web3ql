@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import FloatingCards from './FloatingCards';
+import { toast } from 'sonner';
 
 interface PlatformStats {
   databases: string;
@@ -35,7 +36,19 @@ function useStats(): PlatformStats {
 
 export default function Hero() {
   const [email, setEmail] = useState('');
+  const [submitted, setSubmitted] = useState(false);
   const stats = useStats();
+
+  function handleWaitlist(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || !email.includes('@')) {
+      toast.error('Enter a valid email address');
+      return;
+    }
+    // TODO: wire to a real waitlist API (e.g. POST /api/waitlist)
+    setSubmitted(true);
+    toast.success('You\'re on the list! We\'ll be in touch.');
+  }
 
   return (
     <section className="py-20 border-b border-zinc-100">
@@ -64,21 +77,29 @@ export default function Hero() {
             </p>
 
             {/* Email + CTA */}
-            <div className="flex gap-2 mt-8 max-w-sm">
-              <Input
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="flex-1 h-9 rounded-sm border-zinc-300 text-sm focus-visible:ring-0 focus-visible:border-black"
-              />
-              <Button
-                asChild
-                className="bg-black text-white hover:bg-zinc-800 rounded-sm h-9 px-5 text-sm font-medium"
-              >
-                <Link href="/databases">Get Started</Link>
-              </Button>
-            </div>
+            {submitted ? (
+              <div className="mt-8 max-w-sm flex items-center gap-2 text-sm text-zinc-600 border border-zinc-200 rounded-sm px-4 py-2 bg-zinc-50">
+                <span className="text-green-600">✓</span> You&apos;re on the list!
+              </div>
+            ) : (
+              <form onSubmit={handleWaitlist} className="flex gap-2 mt-8 max-w-sm">
+                <Input
+                  type="email"
+                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  aria-label="Email address for waitlist"
+                  className="flex-1 h-9 rounded-sm border-zinc-300 text-sm focus-visible:ring-0 focus-visible:border-black"
+                />
+                <Button
+                  type="submit"
+                  className="bg-black text-white hover:bg-zinc-800 rounded-sm h-9 px-5 text-sm font-medium"
+                >
+                  Get Started
+                </Button>
+              </form>
+            )}
 
             <p className="text-xs text-zinc-400 mt-2">
               Free to start · No credit card required

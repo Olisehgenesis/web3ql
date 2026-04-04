@@ -10,8 +10,6 @@ import {
   Plug,
   CreditCard,
   Users,
-  LayoutDashboard,
-  ChevronDown,
   Circle,
   ExternalLink,
   BookOpen,
@@ -86,7 +84,8 @@ export function Sidebar() {
           </p>
           <Link
             href={`/databases/${activeDatabase.address}`}
-            className="flex items-center gap-2.5 rounded-xl px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors duration-150 group"
+            className="flex items-center gap-2.5 rounded-xl px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors duration-150"
+            aria-label={`Go to database ${activeDatabase.name}`}
           >
             <div className="h-5 w-5 rounded-md bg-violet-100 flex items-center justify-center shrink-0">
               <Database className="h-3 w-3 text-violet-600" />
@@ -97,7 +96,6 @@ export function Sidebar() {
                 {shortAddress(activeDatabase.address)}
               </p>
             </div>
-            <ChevronDown className="h-3.5 w-3.5 text-gray-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
           </Link>
         </div>
       )}

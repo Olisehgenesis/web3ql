@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect }                                    from 'react';
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain } from 'wagmi';
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId } from 'wagmi';
 import { FACTORY_ADDRESS, FACTORY_ABI, DATABASE_ABI, CHAIN_ID } from '@/lib/contracts';
+import { toast }                                                  from 'sonner';
 
 interface Props {
   onSelect: (addr: string, name: string) => void;
@@ -12,13 +13,12 @@ interface Props {
 export default function DatabaseList({ onSelect, selected }: Props) {
   const { address, isConnected } = useAccount();
   const chainId                  = useChainId();
-  const { switchChain }          = useSwitchChain();
   const [newName, setNewName]    = useState('');
   const [creating, setCreating]  = useState(false);
 
   const onCorrectChain = chainId === CHAIN_ID;
 
-  const { data: databases, refetch } = useReadContract({
+  const { data: databases, isLoading, refetch } = useReadContract({
     address:      FACTORY_ADDRESS,
     abi:          FACTORY_ABI,
     functionName: 'getUserDatabases',
@@ -27,7 +27,7 @@ export default function DatabaseList({ onSelect, selected }: Props) {
   });
 
   const { writeContract, data: createHash, isPending } = useWriteContract();
-  const { isSuccess: createDone } = useWaitForTransactionReceipt({
+  const { isLoading: isConfirming, isSuccess: createDone } = useWaitForTransactionReceipt({
     hash: createHash,
   });
 
@@ -35,6 +35,7 @@ export default function DatabaseList({ onSelect, selected }: Props) {
     if (createDone && creating) {
       setCreating(false);
       setNewName('');
+      toast.success('Database deployed');
       refetch();
     }
   }, [createDone]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -43,33 +44,26 @@ export default function DatabaseList({ onSelect, selected }: Props) {
     e.preventDefault();
     if (!newName.trim()) return;
     setCreating(true);
-    writeContract({
-      address:      FACTORY_ADDRESS,
-      abi:          FACTORY_ABI,
-      functionName: 'createDatabase',
-      args:         [newName.trim()],
-    });
+    writeContract(
+      {
+        address:      FACTORY_ADDRESS,
+        abi:          FACTORY_ABI,
+        functionName: 'createDatabase',
+        args:         [newName.trim()],
+      },
+      {
+        onError: (err) => {
+          setCreating(false);
+          toast.error(err.message?.split('\n')[0] ?? 'Transaction failed');
+        },
+      }
+    );
   }
 
   if (!isConnected) {
     return (
       <div className="text-zinc-500 text-sm text-center py-12">
         Connect your wallet to see your databases.
-      </div>
-    );
-  }
-
-  if (!onCorrectChain) {
-    return (
-      <div className="flex flex-col gap-3 py-6 text-center">
-        <p className="text-amber-400 text-xs font-medium">Wrong network</p>
-        <p className="text-zinc-500 text-xs">Switch to Celo Sepolia (chainId 11142220)</p>
-        <button
-          onClick={() => switchChain({ chainId: CHAIN_ID })}
-          className="text-xs bg-amber-600 hover:bg-amber-500 text-white px-3 py-2 rounded-lg transition-colors"
-        >
-          Switch Network
-        </button>
       </div>
     );
   }
@@ -86,20 +80,27 @@ export default function DatabaseList({ onSelect, selected }: Props) {
           value={newName}
           onChange={e => setNewName(e.target.value)}
           placeholder="new-database"
-          className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500"
+          className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500"
         />
         <button
           type="submit"
-          disabled={isPending || !newName.trim()}
-          className="text-sm bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-colors"
+          disabled={isPending || isConfirming || !newName.trim()}
+          className="text-sm bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-colors"
         >
-          {isPending ? '…' : '+ New'}
+          {isPending ? 'Confirm…' : isConfirming ? 'Deploying…' : '+ New'}
         </button>
       </form>
 
       {/* List */}
       <div className="flex flex-col gap-1">
-        {!databases || databases.length === 0 ? (
+        {isLoading ? (
+          // Loading skeletons
+          <>
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-10 rounded-lg bg-zinc-800/60 animate-pulse" />
+            ))}
+          </>
+        ) : !databases || databases.length === 0 ? (
           <p className="text-zinc-600 text-sm py-4 text-center">No databases yet.</p>
         ) : (
           databases.map((addr) => (

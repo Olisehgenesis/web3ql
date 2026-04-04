@@ -24,6 +24,7 @@ export function MobileNav() {
     <div className="lg:hidden">
       <button
         onClick={() => setOpen(true)}
+        aria-label="Open navigation menu"
         className="flex h-8 w-8 items-center justify-center rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
       >
         <Menu className="h-4 w-4 text-gray-600" />

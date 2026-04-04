@@ -3,7 +3,11 @@
 import { useState, useEffect }                                                          from 'react';
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt }             from 'wagmi';
 import { DATABASE_ABI, TABLE_ABI }                                                     from '@/lib/contracts';
-import { toHex }                                                                       from 'viem';
+import { toast }                                                                       from 'sonner';
+import { SchemaBuilder }                                                               from '@/components/tables/SchemaBuilder';
+import { schemaToSQL }                                                                 from '@/lib/utils/schema';
+import type { SchemaField }                                                            from '@/lib/utils/schema';
+import { encodeSchema }                                                                from '@/lib/utils/schema';
 
 interface Props {
   dbAddr: string;
@@ -11,73 +15,98 @@ interface Props {
   selected: string | null;
 }
 
-export default function TableList({ dbAddr, onSelect, selected }: Props) {
-  const [newName,   setNewName]   = useState('');
-  const [newSchema, setNewSchema] = useState('');
-  const [creating,  setCreating]  = useState(false);
+const DEFAULT_FIELDS: SchemaField[] = [{ name: 'id', type: 'INT', primaryKey: true }];
 
-  const { data: tables, refetch } = useReadContract({
+export default function TableList({ dbAddr, onSelect, selected }: Props) {
+  const [newName,  setNewName]  = useState('');
+  const [fields,   setFields]   = useState<SchemaField[]>(DEFAULT_FIELDS);
+  const [creating, setCreating] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+
+  const { data: tables, isLoading, refetch } = useReadContract({
     address:      dbAddr as `0x${string}`,
     abi:          DATABASE_ABI,
     functionName: 'listTables',
   });
 
   const { writeContract, data: createHash, isPending } = useWriteContract();
-  const { isSuccess: createDone } = useWaitForTransactionReceipt({ hash: createHash });
+  const { isLoading: isConfirming, isSuccess: createDone } = useWaitForTransactionReceipt({ hash: createHash });
 
   useEffect(() => {
     if (createDone && creating) {
       setCreating(false);
       setNewName('');
-      setNewSchema('');
+      setFields(DEFAULT_FIELDS);
+      setShowForm(false);
+      toast.success('Table created on-chain');
       refetch();
     }
   }, [createDone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!newName.trim() || !newSchema.trim()) return;
+    if (!newName.trim() || fields.length === 0) return;
+    const sql = schemaToSQL(newName.trim(), fields);
     setCreating(true);
-    writeContract({
-      address:      dbAddr as `0x${string}`,
-      abi:          DATABASE_ABI,
-      functionName: 'createTable',
-      args:         [newName.trim(), toHex(new TextEncoder().encode(newSchema.trim()))],
-    });
+    writeContract(
+      {
+        address:      dbAddr as `0x${string}`,
+        abi:          DATABASE_ABI,
+        functionName: 'createTable',
+        args:         [newName.trim(), encodeSchema(sql)],
+      },
+      {
+        onError: (err) => {
+          setCreating(false);
+          toast.error(err.message?.split('\n')[0] ?? 'Transaction failed');
+        },
+      }
+    );
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
-        Tables
-      </h2>
-
-      {/* Create form */}
-      <form onSubmit={handleCreate} className="flex flex-col gap-2">
-        <input
-          value={newName}
-          onChange={e => setNewName(e.target.value)}
-          placeholder="table_name"
-          className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500"
-        />
-        <input
-          value={newSchema}
-          onChange={e => setNewSchema(e.target.value)}
-          placeholder="CREATE TABLE users (id INT PRIMARY KEY, name TEXT)"
-          className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500 font-mono"
-        />
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+          Tables
+        </h2>
         <button
-          type="submit"
-          disabled={isPending || !newName.trim() || !newSchema.trim()}
-          className="text-sm bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-colors"
+          onClick={() => setShowForm((s) => !s)}
+          className="text-xs text-violet-400 hover:text-violet-300 transition-colors"
         >
-          {isPending ? 'Creating…' : '+ Create Table'}
+          {showForm ? 'Cancel' : '+ New Table'}
         </button>
-      </form>
+      </div>
+
+      {/* Create form — toggled */}
+      {showForm && (
+        <form onSubmit={handleCreate} className="flex flex-col gap-3 bg-zinc-800/40 border border-zinc-700/50 rounded-lg p-3">
+          <input
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            placeholder="table_name"
+            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500"
+          />
+          <SchemaBuilder fields={fields} onChange={setFields} disabled={isPending || isConfirming} />
+          <button
+            type="submit"
+            disabled={isPending || isConfirming || !newName.trim() || fields.length === 0}
+            className="text-sm bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            {isPending ? 'Confirm in wallet…' : isConfirming ? 'Creating on-chain…' : 'Create Table'}
+          </button>
+        </form>
+      )}
 
       {/* List */}
       <div className="flex flex-col gap-1">
-        {!tables || tables.length === 0 ? (
+        {isLoading ? (
+          <>
+            {[1, 2].map((i) => (
+              <div key={i} className="h-10 rounded-lg bg-zinc-800/60 animate-pulse" />
+            ))}
+          </>
+        ) : !tables || tables.length === 0 ? (
           <p className="text-zinc-600 text-sm py-4 text-center">No tables yet.</p>
         ) : (
           (tables as string[]).map((name) => (

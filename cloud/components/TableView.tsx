@@ -3,16 +3,22 @@
 import { useState }                                                        from 'react';
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { TABLE_ABI, recordKey, roleLabel }                                 from '@/lib/contracts';
-import { toHex }                                                           from 'viem';
+import { toHex, isAddress }                                                from 'viem';
+import { toast }                                                           from 'sonner';
+import { AlertTriangle, ChevronLeft, ChevronRight }                        from 'lucide-react';
 
 interface Props {
   tableAddr: string;
   tableName: string;
 }
 
+const PAGE_SIZE = 25;
+
 export default function TableView({ tableAddr, tableName }: Props) {
   const { address } = useAccount();
   const addr = tableAddr as `0x${string}`;
+  const [page, setPage] = useState(0);
+  const offset = BigInt(page * PAGE_SIZE);
 
   const { data: total }   = useReadContract({ address: addr, abi: TABLE_ABI, functionName: 'totalRecords' });
   const { data: active }  = useReadContract({ address: addr, abi: TABLE_ABI, functionName: 'activeRecords' });
@@ -23,12 +29,14 @@ export default function TableView({ tableAddr, tableName }: Props) {
   });
   const { data: myKeys, refetch: refetchKeys } = useReadContract({
     address: addr, abi: TABLE_ABI, functionName: 'getOwnerRecords',
-    args: [address!, BigInt(0), BigInt(25)], query: { enabled: !!address },
+    args: [address!, offset, BigInt(PAGE_SIZE)], query: { enabled: !!address },
   });
 
   const schemaText = schema
     ? new TextDecoder().decode(Buffer.from((schema as string).slice(2), 'hex'))
     : '';
+
+  const totalPages = myCount ? Math.ceil(Number(myCount) / PAGE_SIZE) : 1;
 
   return (
     <div className="flex flex-col gap-6">
@@ -43,14 +51,14 @@ export default function TableView({ tableAddr, tableName }: Props) {
       {schemaText && (
         <div className="bg-zinc-900 border border-zinc-700/50 rounded-lg p-3">
           <p className="text-xs text-zinc-500 mb-1 uppercase tracking-widest">Schema</p>
-          <pre className="text-xs font-mono text-emerald-400 whitespace-pre-wrap break-all">
+          <pre className="text-xs font-mono text-violet-400 whitespace-pre-wrap break-all">
             {schemaText}
           </pre>
         </div>
       )}
 
       {/* Write record */}
-      <WriteRecord tableAddr={addr} tableName={tableName} onDone={() => refetchKeys()} />
+      <WriteRecord tableAddr={addr} tableName={tableName} onDone={() => { setPage(0); refetchKeys(); }} />
 
       {/* My records */}
       <div>
@@ -62,11 +70,40 @@ export default function TableView({ tableAddr, tableName }: Props) {
             No records yet — write one above.
           </p>
         ) : (
-          <div className="flex flex-col gap-2">
-            {(myKeys as `0x${string}`[]).map((key) => (
-              <RecordRow key={key} tableAddr={addr} recordKey={key} onDone={() => refetchKeys()} />
-            ))}
-          </div>
+          <>
+            <div className="flex flex-col gap-2">
+              {(myKeys as `0x${string}`[]).map((key) => (
+                <RecordRow key={key} tableAddr={addr} recordKey={key} onDone={() => refetchKeys()} />
+              ))}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-zinc-800">
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-30 transition-colors"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  Previous
+                </button>
+                <span className="text-xs text-zinc-500">
+                  Page {page + 1} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-30 transition-colors"
+                  aria-label="Next page"
+                >
+                  Next
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -97,22 +134,30 @@ function WriteRecord({
 }) {
   const [pk,   setPk]   = useState('');
   const [data, setData] = useState('');
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [done, setDone] = useState(false);
   const { writeContract, data: hash, isPending } = useWriteContract();
-  const { isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  if (isSuccess) { onDone(); }
+  if (isSuccess && !done) {
+    setDone(true);
+    setPk('');
+    setData('');
+    toast.success('Record written to chain');
+    onDone();
+  }
+  if (!isSuccess && done) setDone(false);
 
   function handleWrite(e: React.FormEvent) {
     e.preventDefault();
     if (!pk.trim() || !data.trim()) return;
-    const key       = recordKey(tableName, pk.trim());
-    // Plaintext stored directly as "ciphertext" — replace with real encryption in production
-    const cipher    = toHex(new TextEncoder().encode(data.trim()));
-    const encKey    = toHex(new TextEncoder().encode('__plaintext_demo__'));
-    writeContract({
-      address: tableAddr, abi: TABLE_ABI, functionName: 'write',
-      args: [key, cipher, encKey],
-    });
+    const key    = recordKey(tableName, pk.trim());
+    const cipher = toHex(new TextEncoder().encode(data.trim()));
+    const encKey = toHex(new TextEncoder().encode('__plaintext_demo__'));
+    writeContract(
+      { address: tableAddr, abi: TABLE_ABI, functionName: 'write', args: [key, cipher, encKey] },
+      { onError: (err) => toast.error(err.message?.split('\n')[0] ?? 'Transaction failed') }
+    );
   }
 
   return (
@@ -120,26 +165,47 @@ function WriteRecord({
       <h3 className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
         Write Record
       </h3>
+
+      {/* Demo-mode plaintext warning */}
+      <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-700/50 bg-amber-900/20 px-3 py-2">
+        <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-amber-300 font-medium">Demo mode — data is stored unencrypted</p>
+          <p className="text-xs text-amber-400/80 mt-0.5">
+            Do not write sensitive data. Real encryption via the SDK will be enabled in production.
+          </p>
+          <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={acknowledged}
+              onChange={(e) => setAcknowledged(e.target.checked)}
+              className="h-3.5 w-3.5 accent-amber-500"
+            />
+            <span className="text-[11px] text-amber-400">I understand this data is public</span>
+          </label>
+        </div>
+      </div>
+
       <form onSubmit={handleWrite} className="flex flex-col gap-2">
         <input
           value={pk}
           onChange={e => setPk(e.target.value)}
           placeholder="Primary key (e.g. user-1)"
-          className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500"
+          className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500"
         />
         <textarea
           value={data}
           onChange={e => setData(e.target.value)}
           rows={3}
           placeholder='{"name":"Alice","balance":100}'
-          className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500 font-mono resize-none"
+          className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500 font-mono resize-none"
         />
         <button
           type="submit"
-          disabled={isPending || !pk.trim() || !data.trim()}
-          className="text-sm bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-colors"
+          disabled={isPending || isConfirming || !pk.trim() || !data.trim() || !acknowledged}
+          className="text-sm bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-colors"
         >
-          {isPending ? 'Writing…' : 'Write to chain'}
+          {isPending ? 'Confirm in wallet…' : isConfirming ? 'Confirming on-chain…' : 'Write to chain'}
         </button>
       </form>
     </div>
@@ -159,17 +225,23 @@ function RecordRow({
 }) {
   const [expanded, setExpanded]       = useState(false);
   const [showCollabs, setShowCollabs] = useState(false);
+  const [delDoneHandled, setDelDoneHandled] = useState(false);
 
   const { data: rec } = useReadContract({
     address: tableAddr, abi: TABLE_ABI, functionName: 'read', args: [key],
   });
-  const { data: collabs } = useReadContract({
+  const { data: collabs, refetch: refetchCollabs } = useReadContract({
     address: tableAddr, abi: TABLE_ABI, functionName: 'getCollaborators', args: [key],
     query: { enabled: showCollabs },
   });
   const { writeContract, data: delHash, isPending: delPending } = useWriteContract();
-  const { isSuccess: delDone } = useWaitForTransactionReceipt({ hash: delHash });
-  if (delDone) onDone();
+  const { isLoading: delConfirming, isSuccess: delDone } = useWaitForTransactionReceipt({ hash: delHash });
+
+  if (delDone && !delDoneHandled) {
+    setDelDoneHandled(true);
+    toast.success('Record deleted');
+    onDone();
+  }
 
   if (!rec) return null;
   const recTuple = rec as unknown as [`0x${string}`, boolean, bigint, bigint, `0x${string}`];
@@ -185,54 +257,69 @@ function RecordRow({
 
   const ts = new Date(Number(updatedAt) * 1000).toLocaleString();
 
+  // Use decoded plaintext as the record label, fall back to truncated hash
+  const recordLabel = plaintext.length > 0 && plaintext !== '[binary]'
+    ? (plaintext.length > 40 ? plaintext.slice(0, 40) + '…' : plaintext)
+    : key.slice(0, 16) + '…';
+
   return (
     <div className="bg-zinc-900 border border-zinc-700/50 rounded-lg overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-zinc-800/50 transition-colors"
+        aria-expanded={expanded}
+        aria-label={`Record: ${recordLabel}`}
       >
-        <span className="font-mono text-xs text-zinc-400">{key.slice(0, 16)}…</span>
-        <div className="flex items-center gap-3">
+        <span className="font-mono text-xs text-zinc-300 truncate max-w-[55%]">{recordLabel}</span>
+        <div className="flex items-center gap-3 shrink-0">
           <span className="text-xs text-zinc-500">v{version.toString()} · {ts}</span>
-          <span className="text-zinc-500">{expanded ? '▲' : '▼'}</span>
+          <span className="text-zinc-500 text-xs">{expanded ? '▲' : '▼'}</span>
         </div>
       </button>
 
       {expanded && (
         <div className="px-4 pb-4 flex flex-col gap-3 border-t border-zinc-800">
           <div className="mt-3">
-            <p className="text-xs text-zinc-500 mb-1">Ciphertext (plaintext in demo)</p>
-            <pre className="text-xs font-mono text-emerald-400 bg-zinc-800 rounded p-2 whitespace-pre-wrap break-all">
+            <p className="text-xs text-zinc-500 mb-1">Data (stored unencrypted in demo)</p>
+            <pre className="text-xs font-mono text-violet-400 bg-zinc-800 rounded p-2 whitespace-pre-wrap break-all">
               {plaintext}
             </pre>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-zinc-500">Owner: <span className="font-mono text-zinc-400">{(owner as string).slice(0, 10)}…</span></span>
+            <span className="text-xs text-zinc-500 font-mono truncate">
+              Key: {key.slice(0, 12)}…
+            </span>
+            <span className="text-xs text-zinc-500">
+              Owner: <span className="font-mono text-zinc-400">{(owner as string).slice(0, 10)}…</span>
+            </span>
 
             <button
-              onClick={() => setShowCollabs(!showCollabs)}
-              className="text-xs text-sky-400 hover:text-sky-300 underline"
+              onClick={() => { setShowCollabs((s) => !s); if (!showCollabs) refetchCollabs(); }}
+              className="text-xs text-violet-400 hover:text-violet-300 underline"
             >
               {showCollabs ? 'Hide' : 'Show'} collaborators
             </button>
 
             <button
-              onClick={() => writeContract({
-                address: tableAddr, abi: TABLE_ABI, functionName: 'deleteRecord', args: [key],
-              })}
-              disabled={delPending}
+              onClick={() => writeContract(
+                { address: tableAddr, abi: TABLE_ABI, functionName: 'deleteRecord', args: [key] },
+                { onError: (err) => toast.error(err.message?.split('\n')[0] ?? 'Delete failed') }
+              )}
+              disabled={delPending || delConfirming}
+              aria-label="Delete record"
               className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40 ml-auto border border-red-700/40 hover:border-red-600 rounded px-2 py-1 transition-colors"
             >
-              {delPending ? 'Deleting…' : 'Delete'}
+              {delPending ? 'Confirm in wallet…' : delConfirming ? 'Deleting…' : 'Delete'}
             </button>
           </div>
 
-          {showCollabs && collabs && (
+          {showCollabs && (
             <CollaboratorList
               tableAddr={tableAddr}
               recordKey={key}
-              collabs={collabs as string[]}
+              collabs={(collabs as string[]) ?? []}
+              onGranted={() => refetchCollabs()}
             />
           )}
         </div>
@@ -241,24 +328,54 @@ function RecordRow({
   );
 }
 
-// ─── Collaborator list ────────────────────────────────────────────────────────
+// ─── Collaborator list + grant access ─────────────────────────────────────────
 
 function CollaboratorList({
   tableAddr,
   recordKey: key,
   collabs,
+  onGranted,
 }: {
   tableAddr: `0x${string}`;
   recordKey: `0x${string}`;
   collabs: string[];
+  onGranted: () => void;
 }) {
+  const [grantAddr, setGrantAddr] = useState('');
+  const [grantRole, setGrantRole] = useState<number>(1);
+  const [grantDoneHandled, setGrantDoneHandled] = useState(false);
+  const { writeContract, data: grantHash, isPending: grantPending } = useWriteContract();
+  const { isLoading: grantConfirming, isSuccess: grantDone } = useWaitForTransactionReceipt({ hash: grantHash });
+
+  if (grantDone && !grantDoneHandled) {
+    setGrantDoneHandled(true);
+    toast.success('Access granted');
+    setGrantAddr('');
+    onGranted();
+  }
+  if (!grantDone && grantDoneHandled) setGrantDoneHandled(false);
+
+  function handleGrant(e: React.FormEvent) {
+    e.preventDefault();
+    if (!isAddress(grantAddr)) { toast.error('Invalid wallet address'); return; }
+    writeContract(
+      {
+        address: tableAddr, abi: TABLE_ABI, functionName: 'grantAccess',
+        // role is uint8 (number), encryptedKeyForUser is empty bytes in demo mode
+        args: [key, grantAddr as `0x${string}`, grantRole, '0x' as `0x${string}`],
+      },
+      { onError: (err) => toast.error(err.message?.split('\n')[0] ?? 'Grant failed') }
+    );
+  }
+
   return (
-    <div className="bg-zinc-800 rounded-lg p-3">
-      <p className="text-xs text-zinc-500 mb-2 uppercase tracking-widest">
+    <div className="bg-zinc-800 rounded-lg p-3 flex flex-col gap-3">
+      <p className="text-xs text-zinc-500 uppercase tracking-widest">
         Collaborators ({collabs.length})
       </p>
+
       {collabs.length === 0 ? (
-        <p className="text-zinc-600 text-xs">None.</p>
+        <p className="text-zinc-600 text-xs">No collaborators yet.</p>
       ) : (
         <div className="flex flex-col gap-1">
           {collabs.map((addr) => (
@@ -271,6 +388,37 @@ function CollaboratorList({
           ))}
         </div>
       )}
+
+      {/* Grant access form */}
+      <div className="pt-2 border-t border-zinc-700">
+        <p className="text-[11px] text-zinc-500 mb-2 uppercase tracking-wider">Grant Access</p>
+        <form onSubmit={handleGrant} className="flex flex-col gap-2">
+          <input
+            value={grantAddr}
+            onChange={(e) => setGrantAddr(e.target.value)}
+            placeholder="0x… wallet address"
+            className="bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500 font-mono"
+          />
+          <div className="flex gap-2">
+            <select
+              value={grantRole}
+              onChange={(e) => setGrantRole(Number(e.target.value))}
+              className="bg-zinc-700 border border-zinc-600 rounded-lg px-2 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-violet-500 flex-1"
+            >
+              <option value={1}>VIEWER — read only</option>
+              <option value={2}>EDITOR — read &amp; write</option>
+              <option value={3}>OWNER — full control</option>
+            </select>
+            <button
+              type="submit"
+              disabled={grantPending || grantConfirming || !grantAddr.trim()}
+              className="text-xs bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg transition-colors shrink-0"
+            >
+              {grantPending ? 'Confirm…' : grantConfirming ? 'Granting…' : 'Grant'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -288,7 +436,8 @@ function CollaboratorRow({
   const { data: role }  = useReadContract({
     address: tableAddr, abi: TABLE_ABI, functionName: 'getRole', args: [key, user as `0x${string}`],
   });
-  const { writeContract, isPending } = useWriteContract();
+  const { writeContract, data: revokeHash, isPending } = useWriteContract();
+  const { isLoading: revokeConfirming } = useWaitForTransactionReceipt({ hash: revokeHash });
   const isMe = me?.toLowerCase() === user.toLowerCase();
 
   return (
@@ -296,7 +445,7 @@ function CollaboratorRow({
       <span className="font-mono text-zinc-400">{user.slice(0, 10)}… {isMe && '(you)'}</span>
       <div className="flex items-center gap-2">
         <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-          role === 3 ? 'bg-emerald-900 text-emerald-300' :
+          role === 3 ? 'bg-violet-900 text-violet-300' :
           role === 2 ? 'bg-sky-900 text-sky-300' :
           'bg-zinc-700 text-zinc-400'
         }`}>
@@ -304,14 +453,15 @@ function CollaboratorRow({
         </span>
         {!isMe && (
           <button
-            disabled={isPending}
-            onClick={() => writeContract({
-              address: tableAddr, abi: TABLE_ABI, functionName: 'revokeAccess',
-              args: [key, user as `0x${string}`],
-            })}
-            className="text-red-400 hover:text-red-300 disabled:opacity-40"
+            disabled={isPending || revokeConfirming}
+            aria-label={`Revoke access for ${user}`}
+            onClick={() => writeContract(
+              { address: tableAddr, abi: TABLE_ABI, functionName: 'revokeAccess', args: [key, user as `0x${string}`] },
+              { onError: (err) => toast.error(err.message?.split('\n')[0] ?? 'Revoke failed') }
+            )}
+            className="text-red-400 hover:text-red-300 disabled:opacity-40 transition-colors"
           >
-            Revoke
+            {isPending ? 'Confirm…' : revokeConfirming ? 'Revoking…' : 'Revoke'}
           </button>
         )}
       </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import { Plus, Trash2, Key } from 'lucide-react'
+import { useRef } from 'react'
 import type { SchemaField } from '@/lib/utils/schema'
 import { Input } from '@/components/ui/input'
 import {
@@ -81,9 +82,18 @@ interface SchemaBuilderProps {
   disabled?: boolean
 }
 
+// Attach stable IDs to fields for React reconciliation
+type FieldWithId = SchemaField & { _id: string }
+
+function withIds(fields: SchemaField[]): FieldWithId[] {
+  return fields.map((f) => (('_id' in f) ? f as FieldWithId : { ...f, _id: crypto.randomUUID() }))
+}
+
 export function SchemaBuilder({ fields, onChange, disabled }: SchemaBuilderProps) {
+  const fieldsWithIds = withIds(fields) as FieldWithId[]
+
   const addField = () => {
-    onChange([...fields, { name: '', type: 'TEXT' }])
+    onChange([...fields, { name: '', type: 'TEXT', _id: crypto.randomUUID() } as SchemaField])
   }
 
   const removeField = (idx: number) => {
@@ -106,8 +116,8 @@ export function SchemaBuilder({ fields, onChange, disabled }: SchemaBuilderProps
 
       {/* Fields */}
       <div className="divide-y divide-gray-100">
-        {fields.map((field, idx) => (
-          <div key={idx} className="px-3 py-2">
+        {fieldsWithIds.map((field, idx) => (
+          <div key={(field as FieldWithId)._id ?? idx} className="px-3 py-2">
             <div className="flex items-center gap-3">
               <div className="flex-1">
                 <Input
