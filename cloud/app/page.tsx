@@ -70,6 +70,160 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Comparison table ── */}
+      <section className="py-20 border-b border-zinc-100">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="mb-12">
+            <p className="text-xs font-medium uppercase tracking-widest text-zinc-400 mb-2">Why Web3QL</p>
+            <h2 className="text-3xl font-bold text-black tracking-tight">How we compare</h2>
+            <p className="text-zinc-500 mt-2 max-w-md text-sm leading-relaxed">
+              Web3QL is the only database that combines the query power of SQL, the flexibility of
+              MongoDB, and true on-chain ownership — nobody, not even us, can read or delete your data.
+            </p>
+          </div>
+
+          {/* table wrapper */}
+          <div className="overflow-x-auto border border-zinc-200">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-zinc-200">
+                  <th className="text-left px-5 py-3.5 font-semibold text-black bg-zinc-50 w-48">Feature</th>
+                  {[
+                    { name: "PostgreSQL",  sub: "Relational SQL"     },
+                    { name: "MongoDB",     sub: "Document NoSQL"     },
+                    { name: "Firebase",    sub: "Google Cloud BaaS"  },
+                    { name: "Tableland",   sub: "Web3 SQL"           },
+                    { name: "Web3QL",      sub: "On-Chain Encrypted", highlight: true },
+                  ].map((col) => (
+                    <th
+                      key={col.name}
+                      className={`text-center px-5 py-3.5 font-semibold ${
+                        col.highlight
+                          ? "bg-black text-white"
+                          : "bg-zinc-50 text-black"
+                      }`}
+                    >
+                      <span className="block">{col.name}</span>
+                      <span className={`block text-xs font-normal mt-0.5 ${col.highlight ? "text-zinc-400" : "text-zinc-400"}`}>
+                        {col.sub}
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  {
+                    feature: "Data ownership",
+                    pg:      "❌ Server owner",
+                    mongo:   "❌ Atlas/cloud",
+                    fire:    "❌ Google",
+                    tbl:     "⚠️ Validators",
+                    w3ql:    "✅ Your wallet",
+                  },
+                  {
+                    feature: "End-to-end encryption",
+                    pg:      "⚠️ TLS only",
+                    mongo:   "⚠️ TLS only",
+                    fire:    "⚠️ TLS only",
+                    tbl:     "❌ Plaintext on-chain",
+                    w3ql:    "✅ NaCl per-record",
+                  },
+                  {
+                    feature: "Permissionless deploy",
+                    pg:      "❌ Infra required",
+                    mongo:   "❌ Atlas account",
+                    fire:    "❌ Google account",
+                    tbl:     "⚠️ Validator set",
+                    w3ql:    "✅ One transaction",
+                  },
+                  {
+                    feature: "Per-record access control",
+                    pg:      "⚠️ Row-level (server)",
+                    mongo:   "⚠️ Field-level (server)",
+                    fire:    "⚠️ Rules (server)",
+                    tbl:     "❌ Table-level only",
+                    w3ql:    "✅ On-chain per key",
+                  },
+                  {
+                    feature: "Gasless writes (relay)",
+                    pg:      "✅ Native",
+                    mongo:   "✅ Native",
+                    fire:    "✅ Native",
+                    tbl:     "❌ User pays gas",
+                    w3ql:    "✅ Meta-tx relay",
+                  },
+                  {
+                    feature: "SQL-style schema",
+                    pg:      "✅ Full SQL",
+                    mongo:   "❌ Schema-less",
+                    fire:    "❌ NoSQL rules",
+                    tbl:     "✅ SQLite subset",
+                    w3ql:    "✅ SQL-like",
+                  },
+                  {
+                    feature: "No vendor lock-in",
+                    pg:      "⚠️ DB engine",
+                    mongo:   "⚠️ BSON format",
+                    fire:    "❌ Google stack",
+                    tbl:     "⚠️ Tableland protocol",
+                    w3ql:    "✅ Open contracts",
+                  },
+                  {
+                    feature: "Self-hostable",
+                    pg:      "✅ Yes",
+                    mongo:   "✅ Yes",
+                    fire:    "❌ No",
+                    tbl:     "❌ No",
+                    w3ql:    "✅ Deploy your own",
+                  },
+                  {
+                    feature: "No server / zero infra",
+                    pg:      "❌ Requires server",
+                    mongo:   "❌ Requires server",
+                    fire:    "✅ Managed",
+                    tbl:     "⚠️ Off-chain nodes",
+                    w3ql:    "✅ Fully on-chain",
+                  },
+                  {
+                    feature: "Programmable with SDK",
+                    pg:      "✅ Many clients",
+                    mongo:   "✅ Official SDK",
+                    fire:    "✅ Official SDK",
+                    tbl:     "⚠️ Limited",
+                    w3ql:    "✅ TypeScript SDK",
+                  },
+                ].map((row, i) => (
+                  <tr key={row.feature} className={`border-b border-zinc-100 ${i % 2 === 0 ? "" : "bg-zinc-50/50"}`}>
+                    <td className="px-5 py-3 font-medium text-black text-xs">{row.feature}</td>
+                    <td className="px-5 py-3 text-center text-xs text-zinc-600">{row.pg}</td>
+                    <td className="px-5 py-3 text-center text-xs text-zinc-600">{row.mongo}</td>
+                    <td className="px-5 py-3 text-center text-xs text-zinc-600">{row.fire}</td>
+                    <td className="px-5 py-3 text-center text-xs text-zinc-600">{row.tbl}</td>
+                    <td className="px-5 py-3 text-center text-xs font-semibold bg-zinc-950 text-white">{row.w3ql}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* bottom callout */}
+          <div className="mt-8 grid sm:grid-cols-3 gap-px bg-zinc-100 border border-zinc-100">
+            {[
+              { icon: "🔏", title: "Only you can read it", desc: "NaCl X25519 encryption means your data is ciphertext on-chain. Not even Web3QL can decrypt it." },
+              { icon: "⛓️", title: "Unstoppable & uncensorable", desc: "Data lives inside smart contracts on Celo. No company can shut down your database." },
+              { icon: "🔑", title: "Share on your terms", desc: "Grant Viewer, Editor, or Owner access per record directly on-chain — no middleware needed." },
+            ].map((c) => (
+              <div key={c.title} className="bg-white p-6">
+                <span className="text-xl">{c.icon}</span>
+                <h3 className="font-semibold text-black mt-3 text-sm">{c.title}</h3>
+                <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">{c.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── Code preview ── */}
       <section className="py-20 border-b border-zinc-100">
         <div className="max-w-6xl mx-auto px-6 grid md:grid-cols-2 gap-16 items-center">

@@ -18,7 +18,7 @@
     "init":             "dotenvx run -- ts-node --esm scripts/init-project.ts"
   },
   "dependencies": {
-    "@dotenvx/dotenvx": "^1.0.0",
+    "@dotenvx/dotenvx": "^0.38.0",
     "ethers":           "^6.13.1"
   },
   "devDependencies": {

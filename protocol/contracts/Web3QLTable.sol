@@ -129,9 +129,10 @@ contract Web3QLTable is
         require(ciphertext.length  > 0, "Web3QLTable: empty ciphertext");
         require(encryptedKey.length > 0, "Web3QLTable: empty encryptedKey");
 
-        bool isNew = (rec.owner == address(0));
+        bool isNew       = (rec.owner == address(0));
+        bool wasDeleted  = rec.deleted; // capture before mutation
 
-        if (rec.deleted) {
+        if (wasDeleted) {
             // Reuse slot — reset collaborator list
             delete _collaborators[key];
         }
@@ -148,9 +149,21 @@ contract Web3QLTable is
 
         if (isNew) {
             totalRecords++;
+            // Only append to _ownerKeys on first-ever write — prevents duplicates
+            // when a deleted key is reused (which sets isNew = false).
+            _ownerKeys[msg.sender].push(key);
+        } else if (wasDeleted) {
+            // Key is being reused after deletion: only append if not already listed.
+            bytes32[] storage ownerList = _ownerKeys[msg.sender];
+            bool alreadyListed = false;
+            uint256 listLen = ownerList.length;
+            for (uint256 j = 0; j < listLen; ) {
+                if (ownerList[j] == key) { alreadyListed = true; break; }
+                unchecked { ++j; }
+            }
+            if (!alreadyListed) _ownerKeys[msg.sender].push(key);
         }
         activeRecords++;
-        _ownerKeys[msg.sender].push(key);
 
         // Grant OWNER role scoped to this record key
         _setOwner(key, msg.sender);
@@ -366,6 +379,42 @@ contract Web3QLTable is
         result = new bytes32[](end - start);
         for (uint256 i = start; i < end; ) {
             result[i - start] = keys[i];
+            unchecked { ++i; }
+        }
+    }
+
+    /**
+     * @notice Like getOwnerRecords but filters out soft-deleted records.
+     *         More expensive (reads each RecordMeta) but avoids wasted SDK
+     *         decrypt calls on deleted keys.
+     */
+    function getActiveOwnerRecords(
+        address addr,
+        uint256 start,
+        uint256 limit
+    ) external view returns (bytes32[] memory result) {
+        bytes32[] storage keys = _ownerKeys[addr];
+        uint256 total = keys.length;
+
+        // First pass: count matching active records from `start`
+        uint256 seen   = 0;
+        uint256 count  = 0;
+        for (uint256 i = 0; i < total && count < limit; ) {
+            if (!_records[keys[i]].deleted && _records[keys[i]].owner == addr) {
+                if (seen >= start) count++;
+                seen++;
+            }
+            unchecked { ++i; }
+        }
+
+        result = new bytes32[](count);
+        uint256 idx    = 0;
+        uint256 seen2  = 0;
+        for (uint256 i = 0; i < total && idx < count; ) {
+            if (!_records[keys[i]].deleted && _records[keys[i]].owner == addr) {
+                if (seen2 >= start) result[idx++] = keys[i];
+                seen2++;
+            }
             unchecked { ++i; }
         }
     }

@@ -8,26 +8,43 @@
  *   INTEGER → INT, BOOLEAN → BOOL, REAL → FLOAT
  */
 
-export type CanonicalType = 'TEXT' | 'INT' | 'BOOL' | 'ADDRESS' | 'FLOAT'
-export type AliasType     = 'INTEGER' | 'BOOLEAN' | 'REAL' | 'BLOB'
+export type CanonicalType =
+  | 'TEXT' | 'INT' | 'BOOL' | 'ADDRESS' | 'FLOAT'
+  | 'TIMESTAMP' | 'DATE' | 'UUID' | 'BYTES32' | 'JSON' | 'ENUM' | 'DECIMAL' | 'BIGINT'
+
+export type AliasType =
+  | 'INTEGER' | 'BOOLEAN' | 'REAL' | 'BLOB'
+  | 'DATETIME' | 'VARCHAR' | 'CHAR' | 'NUMERIC' | 'DOUBLE'
 
 export interface SchemaField {
   name: string
   type: CanonicalType | AliasType
   primaryKey?: boolean
   notNull?: boolean
+  /** Default value — applied by SDK on write if field is absent */
+  defaultVal?: unknown
+  /** ENUM label array — required when type is ENUM */
+  enumValues?: string[]
+  /** DECIMAL precision: [totalDigits, decimalPlaces] */
+  precision?: [number, number]
 }
 
-/** Map legacy SQLite-style type names to canonical Web3QL types. */
+/** Map legacy / alias type names to canonical Web3QL types. */
 function normalizeType(raw: string): CanonicalType {
   const map: Record<string, CanonicalType> = {
-    INTEGER: 'INT',
-    BOOLEAN: 'BOOL',
-    REAL:    'FLOAT',
-    BLOB:    'TEXT', // store blobs as TEXT (hex) in v1
+    INTEGER:  'INT',
+    BOOLEAN:  'BOOL',
+    REAL:     'FLOAT',
+    DOUBLE:   'FLOAT',
+    BLOB:     'BYTES32',
+    DATETIME: 'TIMESTAMP',
+    VARCHAR:  'TEXT',
+    CHAR:     'TEXT',
+    NUMERIC:  'DECIMAL',
   }
-  const upper = raw.toUpperCase() as CanonicalType | AliasType
-  return (map[upper] ?? upper) as CanonicalType
+  // Strip modifiers like VARCHAR(255) → VARCHAR
+  const bare  = raw.toUpperCase().replace(/\(.*\)$/, '') as CanonicalType | AliasType
+  return (map[bare] ?? bare) as CanonicalType
 }
 
 export function schemaToSQL(tableName: string, fields: SchemaField[]): string {

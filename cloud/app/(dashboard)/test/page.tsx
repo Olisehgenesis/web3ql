@@ -1046,8 +1046,8 @@ export default function TestPage() {
               ['✅', 'Decrypt records with signature-derived X25519 keys'],
               ['✅', 'Write new records (encrypted, gasless via relay intent)'],
               ['✅', 'Delete records you own (direct on-chain tx)'],
-              ['⚠️', 'Records shared WITH you — scan AccessGranted events (coming soon)'],
-              ['⚠️', 'Records written via SDK use different key derivation (ETH privkey vs signature)'],
+              ['✅', 'Records shared with you — via AccessGranted event scanning'],
+              ['✅', 'SDK key derivation matches browser (deriveKeypairFromWallet)'],
             ].map(([icon, text]) => (
               <p key={text} className="text-gray-500"><span className="mr-1">{icon}</span>{text}</p>
             ))}

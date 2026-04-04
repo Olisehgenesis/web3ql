@@ -1,7 +1,7 @@
 import { HardhatUserConfig } from 'hardhat/config';
 import '@nomicfoundation/hardhat-toolbox';
 import '@openzeppelin/hardhat-upgrades';
-import '@dotenvx/dotenvx/config';
+import 'dotenv/config';
 
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 if (!PRIVATE_KEY) throw new Error('PRIVATE_KEY not set — run: dotenvx run -- <command>');

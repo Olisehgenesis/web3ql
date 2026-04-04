@@ -19,10 +19,31 @@ import { FieldDef, SqlType, TableAst } from './types.js';
 //  Helpers
 // ─────────────────────────────────────────────────────────────
 
-const SUPPORTED_TYPES = new Set<string>(['INT', 'TEXT', 'BOOL', 'ADDRESS', 'FLOAT']);
+const SUPPORTED_TYPES = new Set<string>([
+  'INT', 'TEXT', 'BOOL', 'ADDRESS', 'FLOAT',
+  'TIMESTAMP', 'DATE', 'UUID', 'BYTES32', 'JSON', 'ENUM', 'DECIMAL', 'BIGINT',
+]);
+
+/** Legacy SQL aliases → canonical SqlType */
+const TYPE_ALIASES: Record<string, string> = {
+  INTEGER:   'INT',
+  BOOLEAN:   'BOOL',
+  REAL:      'FLOAT',
+  DOUBLE:    'FLOAT',
+  NUMERIC:   'DECIMAL',
+  VARCHAR:   'TEXT',
+  CHAR:      'TEXT',
+  BLOB:      'BYTES32',
+  DATETIME:  'TIMESTAMP',
+  TINYINT:   'INT',
+  SMALLINT:  'INT',
+  BIGINT:    'BIGINT',
+};
 
 function assertType(raw: string): SqlType {
-  const upper = raw.toUpperCase();
+  // Strip parenthetical modifiers: DECIMAL(10,2) → DECIMAL, VARCHAR(255) → VARCHAR
+  const bare  = raw.toUpperCase().replace(/\(.*\)$/, '');
+  const upper = TYPE_ALIASES[bare] ?? bare;
   if (!SUPPORTED_TYPES.has(upper)) {
     throw new Error(
       `Unsupported type: "${raw}". Supported: ${[...SUPPORTED_TYPES].join(', ')}`
@@ -102,10 +123,10 @@ export function parseCreateTable(sql: string): TableAst {
   }
 
   const pk = primaryKeys[0];
-  if (pk.type !== 'INT') {
+  const PK_TYPES = new Set<string>(['INT', 'TEXT', 'UUID', 'BYTES32', 'BIGINT']);
+  if (!PK_TYPES.has(pk!.type)) {
     throw new Error(
-      `PRIMARY KEY must be of type INT (got "${pk.type}"). ` +
-      'Only integer primary keys are supported in v1.'
+      `PRIMARY KEY must be INT, TEXT, UUID, BYTES32, or BIGINT (got "${pk!.type}").`
     );
   }
 

@@ -124,6 +124,36 @@ contract Web3QLFactory is
     }
 
     // ─────────────────────────────────────────────────────────────
+    //  Remove a database entry from the user’s list
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Remove a database proxy from the caller’s list.
+     *         The proxy contract is NOT destroyed — it remains on-chain.
+     *         This only removes the factory’s reference so it stops
+     *         appearing in getUserDatabases().
+     * @param db  Address of the database proxy to remove.
+     */
+    function removeDatabase(address db) external {
+        address[] storage list = _userDatabases[msg.sender];
+        uint256 len = list.length;
+        bool found = false;
+        for (uint256 i = 0; i < len; ) {
+            if (list[i] == db) {
+                list[i] = list[len - 1];
+                list.pop();
+                found = true;
+                break;
+            }
+            unchecked { ++i; }
+        }
+        require(found, "Web3QLFactory: database not owned by caller");
+        emit DatabaseRemoved(msg.sender, db);
+    }
+
+    event DatabaseRemoved(address indexed owner, address indexed db);
+
+    // ─────────────────────────────────────────────────────────────
     //  Admin: upgrade shared implementations
     // ─────────────────────────────────────────────────────────────
 

@@ -80,6 +80,7 @@ const TABLE_ABI = [
   // owner record enumeration
   'function ownerRecordCount(address addr) external view returns (uint256)',
   'function getOwnerRecords(address addr, uint256 start, uint256 limit) external view returns (bytes32[] memory)',
+  'function getActiveOwnerRecords(address addr, uint256 start, uint256 limit) external view returns (bytes32[] memory)',
   // table metadata
   'function tableName() external view returns (string memory)',
 ] as const;
@@ -95,6 +96,9 @@ export class EncryptedTableClient {
 
   /** The caller's X25519 keypair — private key STAYS in memory only. */
   private keypair      : EncryptionKeypair;
+  /** Shorthand for casting contract to any so strict index checks don't block calls. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private get c(): any { return this.contract; }
 
   constructor(
     tableAddress : string,
@@ -140,7 +144,7 @@ export class EncryptedTableClient {
     const ciphertext   = encryptData(data, symKey);
     const encryptedKey = encryptKeyForSelf(symKey, this.keypair);
 
-    const tx = await this.contract.write(key, ciphertext, encryptedKey);
+    const tx = await this.c.write(key, ciphertext, encryptedKey);
     return tx.wait();
   }
 
@@ -170,7 +174,7 @@ export class EncryptedTableClient {
    */
   async readRaw(key: string): Promise<RawRecord> {
     const [ciphertext, deleted, version, updatedAt, owner] =
-      await this.contract.read(key);
+      await this.c.read(key);
     if (deleted) throw new Error(`EncryptedTableClient: record ${key} is deleted`);
     return {
       ciphertext: toUint8Array(ciphertext),
@@ -197,7 +201,7 @@ export class EncryptedTableClient {
     const symKey       = generateSymmetricKey();
     const ciphertext   = encryptData(data, symKey);
     const encryptedKey = encryptKeyForSelf(symKey, this.keypair);
-    const tx = await this.contract.update(key, ciphertext, encryptedKey);
+    const tx = await this.c.update(key, ciphertext, encryptedKey);
     return tx.wait();
   }
 
@@ -209,7 +213,7 @@ export class EncryptedTableClient {
    * anyone (the symmetric key is gone).
    */
   async deleteRecord(key: string): Promise<ethers.TransactionReceipt> {
-    const tx = await this.contract.deleteRecord(key);
+    const tx = await this.c.deleteRecord(key);
     return tx.wait();
   }
 
@@ -253,7 +257,7 @@ export class EncryptedTableClient {
     );
 
     // 5. Grant access on-chain
-    const tx = await this.contract.grantAccess(
+    const tx = await this.c.grantAccess(
       key,
       recipient,
       role,
@@ -272,7 +276,7 @@ export class EncryptedTableClient {
     key  : string,
     user : string,
   ): Promise<ethers.TransactionReceipt> {
-    const tx = await this.contract.revokeAccess(key, user);
+    const tx = await this.c.revokeAccess(key, user);
     return tx.wait();
   }
 
@@ -303,7 +307,7 @@ export class EncryptedTableClient {
 
   /** Fetch this caller's encrypted key blob from chain (still encrypted). */
   async getMyEncryptedKey(key: string): Promise<Uint8Array> {
-    const hex = await this.contract.getMyEncryptedKey(key) as string;
+    const hex = await this.c.getMyEncryptedKey(key) as string;
     return ethers.getBytes(hex);
   }
 
@@ -322,29 +326,37 @@ export class EncryptedTableClient {
   // ── Views ──────────────────────────────────────────────────
 
   async exists(key: string): Promise<boolean> {
-    return this.contract.recordExists(key);
+    return this.c.recordExists(key) as Promise<boolean>;
   }
 
   async owner(key: string): Promise<string> {
-    return this.contract.recordOwner(key);
+    return this.c.recordOwner(key) as Promise<string>;
   }
 
   async collaboratorCount(key: string): Promise<number> {
-    return Number(await this.contract.collaboratorCount(key));
+    return Number(await this.c.collaboratorCount(key));
   }
 
-  /** List bytes32 record keys owned by `addr` (paginated). */
+  /** List bytes32 record keys owned by `addr` (paginated).
+   *  Prefers getActiveOwnerRecords (skips deleted) when available;
+   *  falls back to getOwnerRecords for older contract versions.
+   */
   async listOwnerRecords(
     addr  : string,
     start : bigint = 0n,
     limit : bigint = 50n,
   ): Promise<string[]> {
-    return this.contract.getOwnerRecords(addr, start, limit);
+    try {
+      return await this.c.getActiveOwnerRecords(addr, start, limit) as Promise<string[]>;
+    } catch {
+      // Older contract without getActiveOwnerRecords — fall back
+      return this.c.getOwnerRecords(addr, start, limit) as Promise<string[]>;
+    }
   }
 
   /** Total number of records written by `addr` (including deleted). */
   async ownerRecordCount(addr: string): Promise<bigint> {
-    return this.contract.ownerRecordCount(addr);
+    return this.c.ownerRecordCount(addr) as Promise<bigint>;
   }
 }
 

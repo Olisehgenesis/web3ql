@@ -37,7 +37,9 @@ const FACTORY_ABI = [
   'function databaseImplementation() external view returns (address)',
   'function tableImplementation() external view returns (address)',
   'function databaseCount() external view returns (uint256)',
+  'function removeDatabase(address db) external',
   'event DatabaseCreated(address indexed owner, address indexed db, uint256 indexed index)',
+  'event DatabaseRemoved(address indexed owner, address indexed db)',
 ] as const;
 
 const DATABASE_ABI = [
@@ -75,15 +77,16 @@ export class DatabaseClient {
    * @returns           Address of the deployed table proxy.
    */
   async createTable(name: string, schemaBytes: string): Promise<string> {
-    const tx      = await this.contract.createTable(name, schemaBytes);
-    const receipt = await tx.wait() as ethers.TransactionReceipt;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tx      = await (this.contract as any).createTable(name, schemaBytes) as { wait(): Promise<ethers.TransactionReceipt> };
+    const receipt = await tx.wait();
 
     const iface = new ethers.Interface(DATABASE_ABI);
     for (const log of receipt.logs) {
       try {
         const parsed = iface.parseLog(log);
         if (parsed?.name === 'TableCreated') {
-          return parsed.args.tableContract as string;
+          return parsed.args['tableContract'] as string;
         }
       } catch { /* skip non-matching logs */ }
     }
@@ -95,14 +98,28 @@ export class DatabaseClient {
    * Returns ethers.ZeroAddress if not found.
    */
   async getTable(name: string): Promise<string> {
-    return this.contract.getTable(name);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this.contract as any).getTable(name) as Promise<string>;
   }
 
   /**
    * List all table names in this database.
    */
   async listTables(): Promise<string[]> {
-    return this.contract.listTables();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this.contract as any).listTables() as Promise<string[]>;
+  }
+
+  /**
+   * Drop (remove from registry) a table by name.
+   * Records inside the table are NOT purged by this call — they remain
+   * as unreachable ciphertext. Use SchemaManager.dropTable() first to
+   * bulk-delete records if you want storage refunds.
+   */
+  async dropTable(name: string): Promise<ethers.TransactionReceipt> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tx = await (this.contract as any).dropTable(name) as { wait(): Promise<ethers.TransactionReceipt> };
+    return tx.wait();
   }
 
   /**
@@ -158,8 +175,9 @@ export class Web3QLClient {
    * @param name  Human-readable label stored immutably on-chain.
    */
   async createDatabase(name: string = ''): Promise<DatabaseClient> {
-    const tx      = await this.factory.createDatabase(name);
-    const receipt = await tx.wait() as ethers.TransactionReceipt;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tx      = await (this.factory as any).createDatabase(name) as { wait(): Promise<ethers.TransactionReceipt> };
+    const receipt = await tx.wait();
 
     const iface = new ethers.Interface(FACTORY_ABI);
     for (const log of receipt.logs) {
@@ -167,7 +185,7 @@ export class Web3QLClient {
         const parsed = iface.parseLog(log);
         if (parsed?.name === 'DatabaseCreated') {
           return new DatabaseClient(
-            parsed.args.db as string,
+            parsed.args['db'] as string,
             this.signer,
             this.keypair,
           );
@@ -182,7 +200,8 @@ export class Web3QLClient {
    */
   async getDatabases(owner?: string): Promise<string[]> {
     const addr = owner ?? await this.signer.getAddress();
-    return this.factory.getUserDatabases(addr);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this.factory as any).getUserDatabases(addr) as Promise<string[]>;
   }
 
   /**
@@ -203,5 +222,16 @@ export class Web3QLClient {
    */
   database(address: string): DatabaseClient {
     return new DatabaseClient(address, this.signer, this.keypair);
+  }
+
+  /**
+   * Remove a database from the factory’s registry.
+   * The proxy contract is NOT destroyed — it remains on-chain.
+   * After calling this it will no longer appear in getDatabases().
+   */
+  async removeDatabase(dbAddress: string): Promise<ethers.TransactionReceipt> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tx = await (this.factory as any).removeDatabase(dbAddress) as { wait(): Promise<ethers.TransactionReceipt> };
+    return tx.wait();
   }
 }

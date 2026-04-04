@@ -57,7 +57,8 @@ export class PublicKeyRegistryClient {
    */
   async register(keypair: EncryptionKeypair): Promise<ethers.TransactionReceipt> {
     const hex = publicKeyToHex(keypair.publicKey);
-    const tx  = await this.contract.register(hex);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tx  = await (this.contract as any).register(hex) as { wait(): Promise<ethers.TransactionReceipt> };
     return tx.wait();
   }
 
@@ -65,7 +66,8 @@ export class PublicKeyRegistryClient {
    * Check whether an address has registered a public key.
    */
   async hasKey(address: string): Promise<boolean> {
-    return this.contract.hasKey(address);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this.contract as any).hasKey(address) as Promise<boolean>;
   }
 
   /**
@@ -73,7 +75,8 @@ export class PublicKeyRegistryClient {
    * Throws if the address has not registered.
    */
   async getPublicKey(address: string): Promise<Uint8Array> {
-    const hex = await this.contract.getKey(address) as string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const hex = await (this.contract as any).getKey(address) as string;
     return hexToPublicKey(hex);
   }
 

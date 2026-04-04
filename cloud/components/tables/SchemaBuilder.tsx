@@ -13,7 +13,67 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-const FIELD_TYPES = ['TEXT', 'INTEGER', 'BOOLEAN', 'REAL', 'BLOB'] as const
+const FIELD_TYPES = [
+  'TEXT', 'INT', 'BOOL', 'FLOAT', 'ADDRESS',
+  'TIMESTAMP', 'DATE', 'UUID', 'BYTES32', 'JSON', 'ENUM', 'DECIMAL', 'BIGINT',
+] as const
+
+const TYPE_LABELS: Record<string, string> = {
+  TEXT:      'TEXT — string',
+  INT:       'INT — integer',
+  BOOL:      'BOOL — boolean',
+  FLOAT:     'FLOAT — decimal',
+  ADDRESS:   'ADDRESS — wallet',
+  TIMESTAMP: 'TIMESTAMP — datetime',
+  DATE:      'DATE — date only',
+  UUID:      'UUID — unique id',
+  BYTES32:   'BYTES32 — hex data',
+  JSON:      'JSON — object',
+  ENUM:      'ENUM — choice list',
+  DECIMAL:   'DECIMAL — precise num',
+  BIGINT:    'BIGINT — large int',
+}
+
+// Extra inputs shown for specific types
+function ExtraFieldInputs({
+  field, idx, updateField, disabled,
+}: { field: SchemaField; idx: number; updateField: (idx: number, patch: Partial<SchemaField>) => void; disabled?: boolean }) {
+  if (field.type === 'ENUM') {
+    return (
+      <Input
+        value={(field.enumValues ?? []).join(', ')}
+        onChange={(e) => updateField(idx, { enumValues: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+        placeholder="Values: e.g. active, inactive, pending"
+        disabled={disabled}
+        className="h-7 text-[11px] mt-1 text-zinc-500"
+      />
+    )
+  }
+  if (field.type === 'DECIMAL') {
+    const [p = 10, s = 2] = field.precision ?? []
+    return (
+      <div className="flex gap-1 mt-1">
+        <Input
+          type="number" min={1} max={38}
+          value={p}
+          onChange={(e) => updateField(idx, { precision: [Number(e.target.value), s] })}
+          placeholder="Precision"
+          disabled={disabled}
+          className="h-7 text-[11px] w-20"
+        />
+        <Input
+          type="number" min={0} max={18}
+          value={s}
+          onChange={(e) => updateField(idx, { precision: [p, Number(e.target.value)] })}
+          placeholder="Scale"
+          disabled={disabled}
+          className="h-7 text-[11px] w-20"
+        />
+      </div>
+    )
+  }
+  return null
+}
 
 interface SchemaBuilderProps {
   fields: SchemaField[]
@@ -47,54 +107,57 @@ export function SchemaBuilder({ fields, onChange, disabled }: SchemaBuilderProps
       {/* Fields */}
       <div className="divide-y divide-gray-100">
         {fields.map((field, idx) => (
-          <div key={idx} className="flex items-center gap-3 px-3 py-2">
-            <div className="flex-1">
-              <Input
-                value={field.name}
-                onChange={(e) => updateField(idx, { name: e.target.value })}
-                placeholder="field_name"
-                disabled={disabled}
-                className="h-8 text-[13px]"
-              />
-            </div>
-            <div className="w-32">
-              <Select
-                value={field.type}
-                onValueChange={(v) => updateField(idx, { type: v as SchemaField['type'] })}
-                disabled={disabled}
-              >
-                <SelectTrigger className="h-8 text-[13px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {FIELD_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-8 flex items-center justify-center">
+          <div key={idx} className="px-3 py-2">
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <Input
+                  value={field.name}
+                  onChange={(e) => updateField(idx, { name: e.target.value })}
+                  placeholder="field_name"
+                  disabled={disabled}
+                  className="h-8 text-[13px]"
+                />
+              </div>
+              <div className="w-44">
+                <Select
+                  value={field.type}
+                  onValueChange={(v) => updateField(idx, { type: v as SchemaField['type'] })}
+                  disabled={disabled}
+                >
+                  <SelectTrigger className="h-8 text-[11px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FIELD_TYPES.map((t) => (
+                      <SelectItem key={t} value={t} className="text-[11px]">{TYPE_LABELS[t] ?? t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-8 flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => updateField(idx, { primaryKey: !field.primaryKey })}
+                  disabled={disabled}
+                  className={cn(
+                    'h-6 w-6 flex items-center justify-center rounded-md transition-colors',
+                    field.primaryKey ? 'bg-violet-100 text-violet-600' : 'text-gray-300 hover:text-gray-500'
+                  )}
+                  title="Toggle primary key"
+                >
+                  <Key className="h-3.5 w-3.5" />
+                </button>
+              </div>
               <button
                 type="button"
-                onClick={() => updateField(idx, { primaryKey: !field.primaryKey })}
-                disabled={disabled}
-                className={cn(
-                  'h-6 w-6 flex items-center justify-center rounded-md transition-colors',
-                  field.primaryKey ? 'bg-violet-100 text-violet-600' : 'text-gray-300 hover:text-gray-500'
-                )}
-                title="Toggle primary key"
+                onClick={() => removeField(idx)}
+                disabled={disabled || fields.length <= 1}
+                className="w-6 h-6 flex items-center justify-center rounded-md text-gray-300 hover:text-red-500 transition-colors disabled:opacity-30"
               >
-                <Key className="h-3.5 w-3.5" />
+                <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
-            <button
-              type="button"
-              onClick={() => removeField(idx)}
-              disabled={disabled || fields.length <= 1}
-              className="w-6 h-6 flex items-center justify-center rounded-md text-gray-300 hover:text-red-500 transition-colors disabled:opacity-30"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            <ExtraFieldInputs field={field} idx={idx} updateField={updateField} disabled={disabled} />
           </div>
         ))}
       </div>

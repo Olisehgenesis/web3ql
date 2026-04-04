@@ -114,6 +114,39 @@ contract Web3QLDatabase is
         return _tableNames.length;
     }
 
+    // ─────────────────────────────────────────────────────────────
+    //  Drop table
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Remove a table from the registry.
+     *         Records inside the table are NOT deleted by this call —
+     *         they remain on-chain as unreachable ciphertext.
+     *         Use schemaManager.dropTable() from the SDK beforehand to
+     *         purge records if you need storage refunds.
+     * @param name  Table name to drop.
+     */
+    function dropTable(string calldata name) external onlyOwner {
+        require(tables[name] != address(0), "Web3QLDatabase: table not found");
+
+        delete tables[name];
+
+        // Remove from _tableNames (swap-and-pop)
+        uint256 len = _tableNames.length;
+        for (uint256 i = 0; i < len; ) {
+            if (keccak256(bytes(_tableNames[i])) == keccak256(bytes(name))) {
+                _tableNames[i] = _tableNames[len - 1];
+                _tableNames.pop();
+                break;
+            }
+            unchecked { ++i; }
+        }
+
+        emit TableDropped(name);
+    }
+
+    event TableDropped(string indexed name);
+
     /**
      * @notice Update the shared table implementation (owner only).
      *         Existing proxies are NOT upgraded automatically — call
