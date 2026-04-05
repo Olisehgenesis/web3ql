@@ -239,7 +239,9 @@ function WriteRecord({
   );
 }
 
-// ─── Batch import (Multicall3) ────────────────────────────────────────────────
+// ─── Batch import (Multicall3, auto-chunked) ─────────────────────────────────
+
+const CHUNK_SIZE = 50; // safe ceiling: ~50 writes × ~250k gas = ~12.5M gas (well under Celo's 32M limit)
 
 function BatchImport({
   tableAddr,
@@ -250,21 +252,43 @@ function BatchImport({
   tableName: string;
   onDone: () => void;
 }) {
-  const [raw, setRaw]         = useState('');
-  const [format, setFormat]   = useState<'csv' | 'json'>('csv');
+  const [raw, setRaw]           = useState('');
+  const [format, setFormat]     = useState<'csv' | 'json'>('csv');
   const [acknowledged, setAcknowledged] = useState(false);
-  const [preview, setPreview] = useState<{ pk: string; data: string }[]>([]);
-  const [done, setDone]       = useState(false);
+  const [preview, setPreview]   = useState<{ pk: string; data: string }[]>([]);
+  // chunked submission state
+  const [chunks, setChunks]     = useState<{ target: `0x${string}`; allowFailure: boolean; callData: `0x${string}` }[][]>([]);
+  const [chunkIdx, setChunkIdx] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone]         = useState(false);
 
   const { writeContract, data: hash, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess }   = useWaitForTransactionReceipt({ hash });
 
-  if (isSuccess && !done) {
-    setDone(true);
-    setRaw('');
-    setPreview([]);
-    toast.success(`Batch written in one transaction`);
-    onDone();
+  // When a chunk tx confirms, either advance to next chunk or finish
+  if (isSuccess && submitting && !done) {
+    if (chunkIdx + 1 < chunks.length) {
+      // Submit next chunk
+      const nextIdx = chunkIdx + 1;
+      setChunkIdx(nextIdx);
+      writeContract(
+        { address: MULTICALL3_ADDRESS, abi: MULTICALL3_ABI, functionName: 'aggregate3', args: [chunks[nextIdx]] },
+        { onError: (err) => { setSubmitting(false); toast.error(err.message?.split('\n')[0] ?? 'Batch failed'); } }
+      );
+    } else {
+      setDone(true);
+      setSubmitting(false);
+      setRaw('');
+      setPreview([]);
+      setChunks([]);
+      setChunkIdx(0);
+      toast.success(
+        chunks.length === 1
+          ? `${preview.length} records written in 1 transaction`
+          : `${preview.length} records written in ${chunks.length} transactions`
+      );
+      onDone();
+    }
   }
   if (!isSuccess && done) setDone(false);
 
@@ -282,7 +306,6 @@ function BatchImport({
         return [];
       }
     }
-    // CSV: pk,data — skip empty lines and header
     return text
       .split('\n')
       .map(l => l.trim())
@@ -294,30 +317,42 @@ function BatchImport({
       });
   }
 
+  function buildCalls(rows: { pk: string; data: string }[]) {
+    return rows.map(({ pk, data }) => ({
+      target: tableAddr,
+      allowFailure: false as const,
+      callData: encodeFunctionData({
+        abi: TABLE_ABI, functionName: 'write',
+        args: [recordKey(tableName, pk.trim()), toHex(new TextEncoder().encode(data.trim() || pk.trim())), toHex(new TextEncoder().encode('__plaintext_demo__'))],
+      }),
+    }));
+  }
+
   function handlePreview() {
     const rows = parseRows(raw);
     if (rows.length === 0) { toast.error('No valid rows found'); return; }
-    if (rows.length > 100) { toast.error('Max 100 records per batch (block gas limit)'); return; }
     setPreview(rows);
   }
 
   function handleSubmit() {
     if (preview.length === 0) return;
-    const calls = preview.map(({ pk, data }) => {
-      const key      = recordKey(tableName, pk.trim());
-      const cipher   = toHex(new TextEncoder().encode(data.trim() || pk.trim()));
-      const encKey   = toHex(new TextEncoder().encode('__plaintext_demo__'));
-      const callData = encodeFunctionData({
-        abi: TABLE_ABI, functionName: 'write', args: [key, cipher, encKey],
-      });
-      return { target: tableAddr, allowFailure: false, callData };
-    });
-
+    const allCalls = buildCalls(preview);
+    // Split into CHUNK_SIZE chunks — each chunk = 1 tx
+    const built: typeof allCalls[] = [];
+    for (let i = 0; i < allCalls.length; i += CHUNK_SIZE) {
+      built.push(allCalls.slice(i, i + CHUNK_SIZE));
+    }
+    setChunks(built);
+    setChunkIdx(0);
+    setSubmitting(true);
     writeContract(
-      { address: MULTICALL3_ADDRESS, abi: MULTICALL3_ABI, functionName: 'aggregate3', args: [calls] },
-      { onError: (err) => toast.error(err.message?.split('\n')[0] ?? 'Batch failed') }
+      { address: MULTICALL3_ADDRESS, abi: MULTICALL3_ABI, functionName: 'aggregate3', args: [built[0]] },
+      { onError: (err) => { setSubmitting(false); toast.error(err.message?.split('\n')[0] ?? 'Batch failed'); } }
     );
   }
+
+  const totalChunks  = Math.ceil(preview.length / CHUNK_SIZE);
+  const isMultiChunk = totalChunks > 1;
 
   return (
     <div className="p-4 flex flex-col gap-3">
@@ -326,7 +361,10 @@ function BatchImport({
         <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
         <div className="flex-1">
           <p className="text-xs text-amber-300 font-medium">Demo mode — data stored unencrypted</p>
-          <p className="text-xs text-amber-400/80 mt-0.5">All records submit in a single Multicall3 transaction, saving gas vs individual writes.</p>
+          <p className="text-xs text-amber-400/80 mt-0.5">
+            Records are grouped into chunks of {CHUNK_SIZE} and each chunk is submitted as one Multicall3 transaction.
+            Large imports require multiple wallet approvals (one per chunk).
+          </p>
           <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
             <input type="checkbox" checked={acknowledged} onChange={e => setAcknowledged(e.target.checked)} className="h-3.5 w-3.5 accent-amber-500" />
             <span className="text-[11px] text-amber-400">I understand this data is public</span>
@@ -368,7 +406,14 @@ function BatchImport({
         <div className="flex flex-col gap-2">
           <div className="bg-zinc-800 rounded-lg overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700">
-              <span className="text-xs text-zinc-400">{preview.length} records ready</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-zinc-400">{preview.length} records</span>
+                {isMultiChunk && (
+                  <span className="text-[10px] bg-sky-900/50 text-sky-300 px-1.5 py-0.5 rounded-full">
+                    {totalChunks} txs × {CHUNK_SIZE} max
+                  </span>
+                )}
+              </div>
               <button onClick={() => setPreview([])} className="text-zinc-500 hover:text-zinc-300">
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -382,12 +427,35 @@ function BatchImport({
               ))}
             </div>
           </div>
+
+          {/* Chunk progress bar shown during multi-chunk submit */}
+          {submitting && isMultiChunk && (
+            <div className="flex flex-col gap-1">
+              <div className="flex justify-between text-[11px] text-zinc-500">
+                <span>Transaction {chunkIdx + 1} of {totalChunks}</span>
+                <span>{Math.round(((chunkIdx) / totalChunks) * 100)}%</span>
+              </div>
+              <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-violet-500 rounded-full transition-all"
+                  style={{ width: `${((chunkIdx) / totalChunks) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           <button
             onClick={handleSubmit}
-            disabled={isPending || isConfirming}
+            disabled={isPending || isConfirming || submitting}
             className="text-sm bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-colors"
           >
-            {isPending ? 'Confirm in wallet…' : isConfirming ? `Submitting ${preview.length} records…` : `Batch write ${preview.length} records (1 tx)`}
+            {isPending
+              ? `Confirm tx ${chunkIdx + 1}/${totalChunks} in wallet…`
+              : isConfirming
+              ? `Confirming tx ${chunkIdx + 1}/${totalChunks}…`
+              : isMultiChunk
+              ? `Batch write ${preview.length} records (${totalChunks} txs, ${CHUNK_SIZE}/tx)`
+              : `Batch write ${preview.length} records (1 tx)`}
           </button>
         </div>
       )}
