@@ -20,13 +20,27 @@ export type SqlType =
   | 'JSON'      // stored as TEXT, validated on write
   | 'ENUM'      // stored as INT index; label map in schema meta
   | 'DECIMAL'   // stored as INT scaled by 10^scale
-  | 'BIGINT';   // alias for INT / uint256
+  | 'BIGINT'    // alias for INT / uint256
+  | 'UINT256';  // explicit Ethereum uint256 — natural for counters / payments
 
 export interface FieldDef {
   name       : string;
   type       : SqlType;
   primary    : boolean;
   nullable   : boolean;
+  /**
+   * COUNTER fields are stored in the on-chain `counters` mapping, NOT inside
+   * the encrypted ciphertext.  They are publicly readable via counterValue().
+   * Only registered RelationWire contracts can increment them.
+   */
+  counter?   : boolean;
+  /**
+   * PAYABLE fields declare that this field accepts payments when used via a
+   * RelationWire.  Configuration is in the companion WireDef.
+   * - allowedTokens: which token addresses are accepted (address(0) = native)
+   * - minAmount / maxAmount: per-transaction limits (0 = no limit)
+   */
+  payable?   : boolean;
   /** For ENUM: comma-separated label list stored in schema meta */
   enumValues?: string[];
   /** For DECIMAL: [precision, scale] */
@@ -35,9 +49,55 @@ export interface FieldDef {
   defaultVal?: unknown;
 }
 
+// ─────────────────────────────────────────────────────────────
+//  Wire / Relation AST
+// ─────────────────────────────────────────────────────────────
+
+/** One counter update inside a WIRE TO block: field += value */
+export interface WireUpdate {
+  /** Field on the TARGET table */
+  targetField  : string;
+  /**
+   * What to add:
+   *  - 'payment' → use netPayment (msg.value after fee split)
+   *  - number literal → fixed increment (e.g. 1 for a count field)
+   */
+  value        : 'payment' | number;
+}
+
+/** Rules block from WIRE TO */
+export interface WireRules {
+  minPayment?    : number;   // minimum amount in wei/token units (0 = none)
+  maxPayment?    : number;   // maximum amount in wei/token units (0 = none)
+  oncePerAddress?: boolean;  // each wallet fires at most once per targetKey
+  feeBps?        : number;   // basis points of payment sent to feeRecipient
+  feeRecipient?  : string;   // address
+  /**
+   * Allowed payment tokens for this wire.
+   * address(0) (or 'native') = native CELO.
+   * If omitted, defaults to [address(0)] (native only).
+   */
+  allowedTokens? : string[];  // ERC-20 addresses; 'native' maps to address(0)
+  /** Per-token min amounts (parallel to allowedTokens) */
+  tokenMinAmounts?: number[];
+  /** Per-token max amounts (parallel to allowedTokens) */
+  tokenMaxAmounts?: number[];
+}
+
+/** One WIRE TO block parsed from a CREATE TABLE body */
+export interface WireDef {
+  targetTable  : string;       // referenced target table name
+  matchSource  : string;       // source field used as FK (e.g. 'project_id')
+  matchTarget  : string;       // target field it maps to  (e.g. 'id')
+  updates      : WireUpdate[];
+  rules        : WireRules;
+}
+
 export interface TableAst {
   table : string;
   fields: FieldDef[];
+  /** Relation wire definitions declared inside this table's schema */
+  wires?: WireDef[];
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -89,6 +149,7 @@ export const SQL_TO_SOLIDITY: Record<SqlType, string> = {
   ENUM     : 'uint8',    // int index into label array
   DECIMAL  : 'int256',   // scaled by 10^scale
   BIGINT   : 'uint256',
+  UINT256  : 'uint256',
 };
 
 export const SQL_TO_TS: Record<SqlType, string> = {
@@ -105,4 +166,5 @@ export const SQL_TO_TS: Record<SqlType, string> = {
   ENUM     : 'string',   // decoded to label string
   DECIMAL  : 'number',
   BIGINT   : 'bigint',
+  UINT256  : 'bigint',
 };

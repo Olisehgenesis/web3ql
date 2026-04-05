@@ -11,6 +11,7 @@ import {
   AbiFunctionDef,
   AbiParam,
   CompilerOutput,
+  FieldDef,
   SQL_TO_SOLIDITY,
   SQL_TO_TS,
   TableAst,
@@ -48,12 +49,13 @@ function p(name: string, type: string, internalType?: string): AbiParam {
 
 function encodeSchemaBytes(ast: TableAst): string {
   const abiCoder = ethers.AbiCoder.defaultAbiCoder();
-  const fieldNames  = ast.fields.map((f) => f.name);
-  const fieldTypes  = ast.fields.map((f) => f.type);
-  const fieldPrimary= ast.fields.map((f) => f.primary);
+  const fieldNames   = ast.fields.map((f) => f.name);
+  const fieldTypes   = ast.fields.map((f) => f.type);
+  const fieldPrimary = ast.fields.map((f) => f.primary);
+  const fieldCounter = ast.fields.map((f) => f.counter ?? false);
   const encoded = abiCoder.encode(
-    ['string', 'string[]', 'string[]', 'bool[]'],
-    [ast.table, fieldNames, fieldTypes, fieldPrimary]
+    ['string', 'string[]', 'string[]', 'bool[]', 'bool[]'],
+    [ast.table, fieldNames, fieldTypes, fieldPrimary, fieldCounter]
   );
   return encoded;
 }
@@ -209,6 +211,11 @@ function buildAbi(): Abi {
     fn('recordExists',       [p('id','uint256')],   [p('','bool')],    'view'),
     fn('recordOwner',        [p('id','uint256')],   [p('','address')], 'view'),
     fn('getCollaboratorCount', [p('id','uint256')], [p('','uint8')],   'view'),
+    // Counter / Relation
+    fn('counterValue',   [p('targetKey','bytes32'), p('field','bytes32')], [p('','uint256')], 'view'),
+    fn('registerWire',   [p('wire','address'), p('fields','bytes32[]')],   []),
+    fn('revokeWire',     [p('wire','address'), p('fields','bytes32[]')],   []),
+    fn('increment',      [p('targetKey','bytes32'), p('field','bytes32'), p('amount','uint256')], []),
     // Events from Web3QLTable
     {
       type: 'event', name: 'RecordWritten',
@@ -263,9 +270,84 @@ function generateSdkBindings(ast: TableAst, contractName: string): string {
   const pk     = ast.fields.find((f) => f.primary)!;
   const pkTs   = SQL_TO_TS[pk.type]; // bigint
 
-  const fieldTypes = ast.fields
-    .map((f) => `  ${f.name}: ${SQL_TO_TS[f.type]};`)
+  // COUNTER fields live on-chain — exclude from the encrypted record type
+  const encryptedFields = ast.fields.filter((f: FieldDef) => !f.counter);
+  const counterFields   = ast.fields.filter((f: FieldDef) => f.counter);
+
+  // Template variables used inside the return string
+  const encryptedFieldNames     = encryptedFields.filter((f: FieldDef) => !f.primary).map((f: FieldDef) => `${f.name}: ...`).join(', ');
+  const counterFieldNamesLiteral = counterFields.map((f: FieldDef) => `'${f.name}'`).join(', ');
+
+  const fieldTypes = encryptedFields
+    .map((f: FieldDef) => `  ${f.name}: ${SQL_TO_TS[f.type]};`)
     .join('\n');
+
+  const counterInterface = counterFields.length > 0
+    ? `\n/** On-chain counter fields — readable via counterValue(), NOT stored in ciphertext */\nexport interface ${toPascal(ast.table)}Counters {\n` +
+      counterFields.map((f: FieldDef) => `  ${f.name}: bigint;`).join('\n') +
+      '\n}\n'
+    : '';
+
+  // Per-counter read methods
+  const counterMethods = counterFields.map((f: FieldDef) => `
+  /**
+   * Read on-chain counter \`${f.name}\` for a given record id.
+   * Public — no decryption required.
+   */
+  async ${f.name}(id: ${pkTs}): Promise<bigint> {
+    const field = ethers.keccak256(ethers.toUtf8Bytes('${f.name}'));
+    const raw = await (this as any)._contract['counterValue'](this.key(id), field);
+    return BigInt(raw);
+  }`).join('');
+
+  // Per-wire relatedWrite methods
+  const wireMethods = (ast.wires ?? []).map((wire) => {
+    const isPayable = wire.updates.some((u) => u.value === 'payment');
+    const allowedTokens = wire.rules.allowedTokens ?? ['0x0000000000000000000000000000000000000000'];
+    const allowedTokensLiteral = allowedTokens.map((t) => `'${t}'`).join(', ');
+    return `
+  /**
+   * Write to this table via the '${wire.targetTable}' RelationWire.
+   * Atomically updates counters on '${wire.targetTable}' in the same tx.
+   *
+   * Allowed tokens : [${allowedTokensLiteral}]
+   * (address(0) = native CELO; others = ERC-20 — pre-approve wire first)
+   *
+   * @param wireAddress  Deployed Web3QLRelationWire address
+   * @param id           Primary key of the NEW source record
+   * @param payload      Serialised row
+   * @param targetId     Primary key of the TARGET record in '${wire.targetTable}'${isPayable ? "\n   * @param token        Payment token (ethers.ZeroAddress = native CELO)\n   * @param amount       Payment amount (wei for native, token units for ERC-20)" : ''}
+   */
+  async relatedWrite(
+    wireAddress : string,
+    id          : ${pkTs},
+    payload     : string,
+    targetId    : ${pkTs},${isPayable ? "\n    token       : string = ethers.ZeroAddress,\n    amount      : bigint = 0n," : ''}
+  ): Promise<ethers.TransactionReceipt> {
+    const { ciphertext, encryptedKey } = await (this as any).encryptForSelf(payload);
+    const sourceKey = this.key(id);
+    const targetKey = this.deriveKey('${wire.targetTable}', targetId);
+    const wireContract = new ethers.Contract(wireAddress, RELATION_WIRE_ABI, (this as any).signer);
+    const isNative  = !token || token === ethers.ZeroAddress;
+    const txOpts    = isNative ? { value: amount } : {};
+    const erc20Amt  = isNative ? 0n : amount;
+    const tx = await wireContract['relatedWrite'](
+      sourceKey, ciphertext, encryptedKey, targetKey,
+      ${isPayable ? 'isNative ? ethers.ZeroAddress : token, erc20Amt, txOpts' : 'ethers.ZeroAddress, 0n'}
+    );
+    return tx.wait();
+  }`;
+  }).join('');
+
+  const relayWireAbi = (ast.wires ?? []).length > 0 ? `
+const RELATION_WIRE_ABI = [
+  'function relatedWrite(bytes32 sourceKey, bytes ciphertext, bytes encryptedKey, bytes32 targetKey, address token, uint256 amount) payable',
+  'function withdrawProjectFunds(bytes32 targetKey, address token, address to) external',
+  'function withdrawAllProjectFunds(bytes32 targetKey, address to) external',
+  'function projectBalances(bytes32 targetKey) external view returns (address[] tokens, uint256[] balances)',
+  'function getAllowedTokens() external view returns (address[])',
+] as const;
+` : '';
 
   return `\
 /**
@@ -279,15 +361,17 @@ import {
   EncryptedTableClient,
   PublicKeyRegistryClient,
   Role,
+  Model,
   type EncryptionKeypair,
   type RawRecord,
+  type SchemaDefinition,
 }                                                            from '@web3ql/sdk';
 
-// ── Record shape ─────────────────────────────────────────────
+// ── Encrypted record fields (stored in ciphertext) ──────────
 export interface ${toPascal(ast.table)}Record {
 ${fieldTypes}
 }
-
+${counterInterface}${relayWireAbi}
 const TABLE_NAME = '${ast.table}';
 
 // ── Typed client ─────────────────────────────────────────────
@@ -402,6 +486,44 @@ export class ${contractName}Client extends EncryptedTableClient {
 
   async collaboratorCount(id: ${pkTs}): Promise<number> {
     return super.collaboratorCount(this.key(id));
+  }
+${counterMethods}${wireMethods}
+}
+
+// ── ORM Model ────────────────────────────────────────────────
+/**
+ * ${contractName}Model — Web3QL ORM entry point for "${ast.table}".
+ *
+ * Wraps TypedTableClient + on-chain counters + relation writes.
+ * Counter fields are merged automatically into every find() result.
+ *
+ * @example
+ *   const ${ast.table} = new ${contractName}Model(tableAddress, signer, keypair);
+ *
+ *   // Create
+ *   await ${ast.table}.create(1n, { ${encryptedFieldNames} });
+ *
+ *   // Find — counters merged in automatically
+ *   const row = await ${ast.table}.findUnique(1n);
+ *
+ *   // Relation write (native CELO)
+ *   await ${ast.table}.relatedCreate({ wire, id: 2n, data, targetId: 1n, targetTable: 'projects', amount: 2n * 10n**18n });
+ *
+ *   // Relation write (ERC-20 — approve wire first)
+ *   await ${ast.table}.approveWire(wire, cUsdAddress, amount);
+ *   await ${ast.table}.relatedCreate({ wire, id: 3n, data, targetId: 1n, targetTable: 'projects', amount, token: cUsdAddress });
+ */
+export class ${contractName}Model extends Model<${toPascal(ast.table)}Record> {
+  constructor(
+    tableAddress : string,
+    signer       : ethers.Signer,
+    keypair      : EncryptionKeypair,
+    schema?      : SchemaDefinition,
+  ) {
+    super('${ast.table}', tableAddress, signer, keypair, {
+      counterFields: [${counterFieldNamesLiteral}],
+      schema,
+    });
   }
 }
 `;

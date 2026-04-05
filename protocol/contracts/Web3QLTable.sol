@@ -77,6 +77,15 @@ contract Web3QLTable is
     /// Owner → append-only list of record keys they have written.
     mapping(address => bytes32[]) private _ownerKeys;
 
+    // ─── Counter / Relation state ────────────────────────────────
+
+    /// Public counters: targetKey => field (bytes32 of field name) => value.
+    /// Only authorised RelationWire contracts can increment these.
+    mapping(bytes32 => mapping(bytes32 => uint256)) public counters;
+
+    /// Authorised incrementers: wire address => field => allowed.
+    mapping(address => mapping(bytes32 => bool)) public wireCanIncrement;
+
     // ─────────────────────────────────────────────────────────────
     //  Events
     // ─────────────────────────────────────────────────────────────
@@ -86,6 +95,9 @@ contract Web3QLTable is
     event RecordDeleted(bytes32 indexed key, address indexed owner, uint256 version, uint256 updatedAt);
     event AccessGranted(bytes32 indexed key, address indexed user, Web3QLAccess.Role role);
     event AccessRevoked(bytes32 indexed key, address indexed user);
+    event CounterUpdated(bytes32 indexed targetKey, bytes32 indexed field, uint256 newValue);
+    event WireRegistered(address indexed wire, bytes32[] fields);
+    event WireRevoked(address indexed wire, bytes32[] fields);
 
     // ─────────────────────────────────────────────────────────────
     //  Initializer (replaces constructor for UUPS proxy)
@@ -435,5 +447,67 @@ contract Web3QLTable is
     /// @notice Disabled — use revokeAccess() which scrubs the encrypted key.
     function revokeRole(bytes32, address) external pure override {
         revert("Web3QLTable: use revokeAccess()");
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    //  Counter / Relation API
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Register a RelationWire as authorised to increment specific counter fields.
+     *         Only the table owner can call this.  Safe to call after records exist.
+     * @param wire    Address of the deployed Web3QLRelationWire.
+     * @param fields  Array of field name hashes: keccak256(abi.encodePacked(fieldName)).
+     */
+    function registerWire(address wire, bytes32[] calldata fields) external onlyOwner {
+        require(wire != address(0), "Web3QLTable: zero wire address");
+        uint256 len = fields.length;
+        for (uint256 i = 0; i < len; ) {
+            wireCanIncrement[wire][fields[i]] = true;
+            unchecked { ++i; }
+        }
+        emit WireRegistered(wire, fields);
+    }
+
+    /**
+     * @notice Remove a wire's increment permission for given fields.
+     */
+    function revokeWire(address wire, bytes32[] calldata fields) external onlyOwner {
+        uint256 len = fields.length;
+        for (uint256 i = 0; i < len; ) {
+            wireCanIncrement[wire][fields[i]] = false;
+            unchecked { ++i; }
+        }
+        emit WireRevoked(wire, fields);
+    }
+
+    /**
+     * @notice Increment a counter field on a given record key.
+     *         Only callable by a registered RelationWire contract.
+     * @param targetKey  The record key (same bytes32 used for the target record).
+     * @param field      keccak256(abi.encodePacked(fieldName)).
+     * @param amount     Value to add (for payments: pass msg.value; for counts: pass 1).
+     */
+    function increment(bytes32 targetKey, bytes32 field, uint256 amount) external {
+        require(wireCanIncrement[msg.sender][field], "Web3QLTable: caller not a registered wire");
+        counters[targetKey][field] += amount;
+        emit CounterUpdated(targetKey, field, counters[targetKey][field]);
+    }
+
+    /**
+     * @notice Read a counter value.  Public — no auth required.
+     */
+    function counterValue(bytes32 targetKey, bytes32 field) external view returns (uint256) {
+        return counters[targetKey][field];
+    }
+
+    /**
+     * @notice Returns the owner address of a record.
+     *         Used by RelationWire.withdrawProjectFunds() to verify the caller
+     *         is the project owner before releasing accumulated payments.
+     *         Returns address(0) if the record has never been written.
+     */
+    function recordOwner(bytes32 key) external view returns (address) {
+        return _records[key].owner;
     }
 }

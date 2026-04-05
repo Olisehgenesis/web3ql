@@ -162,3 +162,10 @@ export {
   hexToPublicKey,
 }                                                     from './crypto.js';
 export type { EncryptionKeypair }                     from './crypto.js';
+
+// ── v1.3 ORM — Model + Relation wires ────────────────────────
+export { Model }                                      from './model.js';
+export type {
+  ModelOptions,
+  RelatedCreateOptions,
+}                                                     from './model.js';

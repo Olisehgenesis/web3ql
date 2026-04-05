@@ -148,6 +148,24 @@ export class EncryptedTableClient {
     return tx.wait();
   }
 
+  /**
+   * Encrypt `plaintext` for self — returns the raw ciphertext and
+   * encrypted symmetric key bytes WITHOUT submitting any transaction.
+   *
+   * Used by Model.relatedCreate() to hand the encrypted bytes to a
+   * RelationWire contract that will call table.write() on behalf of
+   * the user within an atomic transaction.
+   */
+  async encryptForSelf(
+    plaintext : string | Uint8Array,
+  ): Promise<{ ciphertext: Uint8Array; encryptedKey: Uint8Array }> {
+    const data         = toBytes(plaintext);
+    const symKey       = generateSymmetricKey();
+    const ciphertext   = encryptData(data, symKey);
+    const encryptedKey = encryptKeyForSelf(symKey, this.keypair);
+    return { ciphertext, encryptedKey };
+  }
+
   // ── Read ───────────────────────────────────────────────────
 
   /**
