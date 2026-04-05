@@ -25,6 +25,12 @@
     "deploy:wire:local": "dotenvx run -- hardhat run scripts/deployWire.ts --network localhost",
     "deploy:all": "pnpm run deploy:sepolia && pnpm run deploy:cloud && pnpm run deploy:wire",
     "deploy:all:celo": "pnpm run deploy:celo && pnpm run deploy:cloud:celo && pnpm run deploy:wire:celo",
+    "upgrade": "dotenvx run -- hardhat run scripts/upgrade-all.ts --network celoSepolia",
+    "upgrade:celo": "dotenvx run -- hardhat run scripts/upgrade-all.ts --network celo",
+    "upgrade:factory": "dotenvx run -- sh -c 'UPGRADE_ONLY=factory hardhat run scripts/upgrade-all.ts --network celoSepolia'",
+    "upgrade:registry": "dotenvx run -- sh -c 'UPGRADE_ONLY=registry hardhat run scripts/upgrade-all.ts --network celoSepolia'",
+    "upgrade:factory:celo": "dotenvx run -- sh -c 'UPGRADE_ONLY=factory hardhat run scripts/upgrade-all.ts --network celo'",
+    "upgrade:registry:celo": "dotenvx run -- sh -c 'UPGRADE_ONLY=registry hardhat run scripts/upgrade-all.ts --network celo'",
     "typechain": "hardhat typechain",
     "clean": "hardhat clean",
     "init": "dotenvx run -- ts-node --esm scripts/init-project.ts"
