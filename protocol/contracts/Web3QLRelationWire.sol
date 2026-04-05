@@ -19,6 +19,19 @@ interface IERC20Transfer {
     function balanceOf(address account) external view returns (uint256);
 }
 
+/// @dev ERC-2612 permit — supported by cUSD, cEUR, cREAL, USDC on Celo and most modern tokens.
+interface IERC20Permit {
+    function permit(
+        address owner,
+        address spender,
+        uint256 value,
+        uint256 deadline,
+        uint8   v,
+        bytes32 r,
+        bytes32 s
+    ) external;
+}
+
 /**
  * @title  Web3QLRelationWire
  * @notice Thin connector between a source table and a target table's counter fields.
@@ -199,19 +212,47 @@ contract Web3QLRelationWire {
         address token,
         uint256 amount
     ) external payable {
-        require(tokenAllowed[token], "wire: token not allowed");
-
-        uint256 grossPayment;
         if (token == address(0)) {
-            require(amount == 0,    "wire: use msg.value for native; set amount=0");
-            grossPayment = msg.value;
+            // native path — keep msg.value flow in this function
+            require(tokenAllowed[token], "wire: token not allowed");
+            require(amount == 0, "wire: use msg.value for native; set amount=0");
+            uint256 grossPayment = msg.value;
+            _processPaymentAndWrite(
+                sourceKey, ciphertext, encryptedKey, targetKey, token, grossPayment
+            );
         } else {
             require(msg.value == 0, "wire: no native value for ERC-20 wire");
             require(amount > 0,     "wire: zero ERC-20 amount");
             bool ok = IERC20Transfer(token).transferFrom(msg.sender, address(this), amount);
             require(ok, "wire: transferFrom failed");
-            grossPayment = amount;
+            _relatedWrite(sourceKey, ciphertext, encryptedKey, targetKey, token, amount);
         }
+    }
+
+    /// @dev Internal: called after ERC-20 tokens are already in this contract
+    ///      (either via transferFrom in relatedWrite or via permit+transferFrom in relatedWriteWithPermit).
+    function _relatedWrite(
+        bytes32 sourceKey,
+        bytes   calldata ciphertext,
+        bytes   calldata encryptedKey,
+        bytes32 targetKey,
+        address token,
+        uint256 amount
+    ) internal {
+        require(tokenAllowed[token], "wire: token not allowed");
+        _processPaymentAndWrite(sourceKey, ciphertext, encryptedKey, targetKey, token, amount);
+    }
+
+    /// @dev Shared accounting + write logic. Tokens must already be received before calling.
+    function _processPaymentAndWrite(
+        bytes32 sourceKey,
+        bytes   calldata ciphertext,
+        bytes   calldata encryptedKey,
+        bytes32 targetKey,
+        address token,
+        uint256 grossPayment
+    ) internal {
+        require(tokenAllowed[token], "wire: token not allowed");
 
         uint256 minAmt = tokenMinAmount[token];
         uint256 maxAmt = tokenMaxAmount[token];
@@ -254,6 +295,36 @@ contract Web3QLRelationWire {
         }
 
         emit RelatedWrite(sourceKey, targetKey, msg.sender, token, grossPayment, netPayment);
+    }
+
+    /**
+     * @notice Same as relatedWrite but calls ERC-2612 permit() before transferFrom.
+     *         This lets the user sign a gasless off-chain message instead of sending
+     *         a separate approve transaction.  Falls back gracefully on the SDK side
+     *         if the token does not support permit.
+     *
+     * @param deadline  Unix timestamp after which the permit is invalid.
+     * @param v / r / s EIP-712 signature components from signTypedData / eth_signTypedData.
+     */
+    function relatedWriteWithPermit(
+        bytes32 sourceKey,
+        bytes   calldata ciphertext,
+        bytes   calldata encryptedKey,
+        bytes32 targetKey,
+        address token,
+        uint256 amount,
+        uint256 deadline,
+        uint8   v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        require(token != address(0), "wire: permit only for ERC-20");
+        // Call permit — if the token doesn't support EIP-2612 this reverts and
+        // the SDK catches it and falls back to the standard approve path.
+        IERC20Permit(token).permit(msg.sender, address(this), amount, deadline, v, r, s);
+        // Delegate to the main function (re-uses all validation + accounting logic)
+        // We call it as an internal helper to avoid code duplication.
+        _relatedWrite(sourceKey, ciphertext, encryptedKey, targetKey, token, amount);
     }
 
     // ─────────────────────────────────────────────────────────────

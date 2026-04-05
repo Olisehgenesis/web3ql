@@ -68,6 +68,7 @@ const COUNTER_ABI = [
 
 const WIRE_ABI = [
   'function relatedWrite(bytes32 sourceKey, bytes ciphertext, bytes encryptedKey, bytes32 targetKey, address token, uint256 amount) payable external',
+  'function relatedWriteWithPermit(bytes32 sourceKey, bytes ciphertext, bytes encryptedKey, bytes32 targetKey, address token, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external',
   'function withdrawProjectFunds(bytes32 targetKey, address token, address to) external',
   'function withdrawAllProjectFunds(bytes32 targetKey, address to) external',
   'function projectBalances(bytes32 targetKey) external view returns (address[] tokens, uint256[] balances)',
@@ -77,6 +78,10 @@ const WIRE_ABI = [
 const ERC20_ABI = [
   'function allowance(address owner, address spender) external view returns (uint256)',
   'function approve(address spender, uint256 amount) external returns (bool)',
+  'function nonces(address owner) external view returns (uint256)',
+  'function name() external view returns (string)',
+  'function version() external view returns (string)',
+  'function DOMAIN_SEPARATOR() external view returns (bytes32)',
 ] as const;
 
 // ─────────────────────────────────────────────────────────────
@@ -330,35 +335,52 @@ export class Model<T extends Record<string, unknown>> {
       ethers.solidityPacked(['string', 'uint256'], [targetTable, targetId])
     );
 
-    if (isErc20) {
-      // Safety: check allowance — surface a helpful error rather than reverting on-chain
-      const tokenContract = new ethers.Contract(token!, ERC20_ABI, this.signer);
-      const signerAddr    = await this.signer.getAddress();
-      const allowance     = await (tokenContract as any)['allowance'](signerAddr, wire);
-      if (BigInt(allowance) < amount) {
-        throw new Error(
-          `Insufficient ERC-20 allowance for wire contract.\n` +
-          `Current: ${allowance}, Required: ${amount}\n` +
-          `Call: await model.approveWire('${wire}', '${token}', ${amount}n)`
-        );
-      }
+    const wireContract = new ethers.Contract(wire, WIRE_ABI, this.signer);
+
+    if (isNative) {
+      const tx = await (wireContract as any)['relatedWrite'](
+        sourceKey, ciphertextBytes, encryptedKeyBytes, targetKey,
+        ethers.ZeroAddress, 0n,
+        { value: amount },
+      );
+      return tx.wait();
     }
 
-    const wireContract = new ethers.Contract(wire, WIRE_ABI, this.signer);
-    const txOpts       = isNative ? { value: amount } : {};
-    const tokenAddr    = isErc20 ? token! : ethers.ZeroAddress;
-    const erc20Amount  = isErc20 ? amount : 0n;
+    // ── ERC-20: try permit (gasless approve), fall back to standard approve ──
+    const signerAddr = await this.signer.getAddress();
 
-    const tx = await (wireContract as any)['relatedWrite'](
-      sourceKey,
-      ciphertextBytes,
-      encryptedKeyBytes,
-      targetKey,
-      tokenAddr,
-      erc20Amount,
-      txOpts,
-    );
-    return tx.wait();
+    let usedPermit = false;
+    try {
+      const sig = await this._signPermit(token!, wire, amount, signerAddr);
+      const tx  = await (wireContract as any)['relatedWriteWithPermit'](
+        sourceKey, ciphertextBytes, encryptedKeyBytes, targetKey,
+        token!, amount,
+        sig.deadline, sig.v, sig.r, sig.s,
+      );
+      const receipt = await tx.wait();
+      usedPermit = true;
+      return receipt;
+    } catch {
+      // Token doesn't support EIP-2612 permit, or wallet can't sign typed data — fall through
+    }
+
+    if (!usedPermit) {
+      // Standard path: check allowance, approve if needed, then relatedWrite
+      const tokenContract = new ethers.Contract(token!, ERC20_ABI, this.signer);
+      const allowance     = BigInt(await (tokenContract as any)['allowance'](signerAddr, wire));
+      if (allowance < amount) {
+        const approveTx = await (tokenContract as any)['approve'](wire, ethers.MaxUint256);
+        await approveTx.wait();
+      }
+      const tx = await (wireContract as any)['relatedWrite'](
+        sourceKey, ciphertextBytes, encryptedKeyBytes, targetKey,
+        token!, amount,
+      );
+      return tx.wait();
+    }
+
+    // unreachable but satisfies TypeScript
+    throw new Error('relatedCreate: unexpected state');
   }
 
   /**
@@ -444,7 +466,50 @@ export class Model<T extends Record<string, unknown>> {
   //  Private helpers
   // ─────────────────────────────────────────────────────────────
 
-  /** Read counters by raw bytes32 key (for findMany which has no integer id). */
+  /**
+   * Build and sign an EIP-2612 permit signature.
+   * Works for cUSD, cEUR, cREAL, USDC and any token that implements ERC-2612.
+   * Throws if the token doesn't expose `nonces()` or `DOMAIN_SEPARATOR()`.
+   */
+  private async _signPermit(
+    token    : string,
+    spender  : string,
+    value    : bigint,
+    owner    : string,
+    ttl      : number = 20 * 60, // 20 minutes
+  ): Promise<{ deadline: bigint; v: number; r: string; s: string }> {
+    const tokenContract = new ethers.Contract(token, ERC20_ABI, this.provider);
+
+    const [nonce, name, deadline] = await Promise.all([
+      (tokenContract as any)['nonces'](owner).then(BigInt),
+      (tokenContract as any)['name'](),
+      Promise.resolve(BigInt(Math.floor(Date.now() / 1000) + ttl)),
+    ]);
+
+    // Try ERC-2612 version(); many tokens omit it and default to "1"
+    let version = '1';
+    try { version = await (tokenContract as any)['version'](); } catch { /* default "1" */ }
+
+    const network = await this.provider.getNetwork();
+    const domain  = { name, version, chainId: Number(network.chainId), verifyingContract: token };
+    const types   = {
+      Permit: [
+        { name: 'owner',    type: 'address' },
+        { name: 'spender',  type: 'address' },
+        { name: 'value',    type: 'uint256' },
+        { name: 'nonce',    type: 'uint256' },
+        { name: 'deadline', type: 'uint256' },
+      ],
+    };
+    const message = { owner, spender, value, nonce, deadline };
+
+    const sig = await (this.signer as ethers.Signer & {
+      signTypedData(domain: object, types: object, value: object): Promise<string>;
+    }).signTypedData(domain, types, message);
+
+    const { v, r, s } = ethers.Signature.from(sig);
+    return { deadline, v, r, s };
+  }
   private async _countersFromBytes32Key(recordKey: string): Promise<Record<string, bigint>> {
     if (this.counterFields.length === 0) return {};
     const contract = new ethers.Contract(this.tableAddress, COUNTER_ABI, this.provider);
