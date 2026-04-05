@@ -13,14 +13,13 @@
     "deployer": "0xB8f936be2B12406391B4232647593Cdb62dF2203"
   },
   "celoSepolia": {
-    "factoryAddress": "0x81ae4370a028cd675ba16eCd6fb9f5230eDE658b",
-    "databaseImpl": "0x710f8f939f83B42d745029D491954D3Ea5c94dFf",
-    "tableImpl": "0x14aF1966480d847A3CE71b84354fE65D72eD74e4",
-    "registryAddress": "0x6564a384aC2FB0bD2ead16D7fbcfD89a72d14685",
-    "deployedAt": "2026-04-05T07:49:12.977Z",
-    "deployer": "0xB8f936be2B12406391B4232647593Cdb62dF2203",
-    "cloudDatabase": "0x950b49aF287678E1A4c595fEb7ed1Db6C641A962",
-    "cloudDatabaseDeployedAt": "2026-04-05T07:53:34.138Z"
+    "factoryAddress": "0xA6356407582505468177DC23630c52F3c55BE267",
+    "databaseImpl": "0x5655774d110BEe031dd001f46BA588A483A861D8",
+    "tableImpl": "0x167e5E9baBb7cB3EDf7586f4944a07Ca73994014",
+    "registryAddress": "0x72C5900CcA8FbF5C3dB2115df8c403E70BBc50A1",
+    "cloudDatabase": "0x14b299464e690a16d0a960e7ed8cf787eF90a852",
+    "deployedAt": "2026-04-05T13:50:33.054Z",
+    "deployer": "0xB8f936be2B12406391B4232647593Cdb62dF2203"
   },
   "celo": {
     "factoryAddress": "0x3356D6661e0DA132c41549Bc0D20c5f3e98BE27a",

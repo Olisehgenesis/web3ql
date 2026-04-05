@@ -1,5 +1,5 @@
 {
-  "name": "@web3ql/sdk",
+  "name": "web3ql-client",
   "version": "1.2.0",
   "description": "Web3QL client SDK — end-to-end encrypted SQL-like storage on Celo. NaCl encryption, UUPS proxy contracts, full TypeScript. Includes CLI.",
   "keywords": ["web3", "sql", "encrypted-storage", "celo", "nacl", "e2e-encryption", "cli"],
