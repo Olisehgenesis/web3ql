@@ -2,38 +2,46 @@
   "name": "@web3ql/protocol",
   "version": "0.2.0",
   "description": "Web3QL Protocol Layer — SQL-to-encrypted-onchain-storage, powered by Hardhat + OpenZeppelin UUPS proxies",
-  "keywords": ["web3", "sql", "encrypted-storage", "celo", "hardhat", "uups"],
+  "keywords": [
+    "web3",
+    "sql",
+    "encrypted-storage",
+    "celo",
+    "hardhat",
+    "uups"
+  ],
   "license": "MIT",
   "scripts": {
-    "compile":          "hardhat compile",
-    "test":             "hardhat test",
-    "test:unit":        "node --import tsx --test test/compiler.test.ts",
-    "deploy:local":     "dotenvx run -- hardhat run scripts/deploy-factory.ts --network localhost",
-    "deploy:sepolia":   "dotenvx run -- hardhat run scripts/deploy-factory.ts --network celoSepolia",
-    "deploy:celo":      "dotenvx run -- hardhat run scripts/deploy-factory.ts --network celo",
-    "deploy:cloud":     "dotenvx run -- hardhat run scripts/deploy-cloud.ts --network celoSepolia",
-    "deploy:cloud:celo":"dotenvx run -- hardhat run scripts/deploy-cloud.ts --network celo",
-    "typechain":        "hardhat typechain",
-    "clean":            "hardhat clean",
-    "init":             "dotenvx run -- ts-node --esm scripts/init-project.ts"
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "test:unit": "node --import tsx --test test/compiler.test.ts",
+    "deploy:local": "dotenvx run -- hardhat run scripts/deploy-factory.ts --network localhost",
+    "deploy:sepolia": "dotenvx run -- hardhat run scripts/deploy-factory.ts --network celoSepolia",
+    "deploy:celo": "dotenvx run -- hardhat run scripts/deploy-factory.ts --network celo",
+    "deploy:cloud": "dotenvx run -- hardhat run scripts/deploy-cloud.ts --network celoSepolia",
+    "deploy:cloud:celo": "dotenvx run -- hardhat run scripts/deploy-cloud.ts --network celo",
+    "typechain": "hardhat typechain",
+    "clean": "hardhat clean",
+    "init": "dotenvx run -- ts-node --esm scripts/init-project.ts"
   },
   "dependencies": {
     "@dotenvx/dotenvx": "^0.38.0",
-    "ethers":           "^6.13.1"
+    "amazon-cognito-identity-js": "^6.3.16",
+    "ethers": "^6.13.1"
   },
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox":    "^5.0.0",
-    "@openzeppelin/contracts":             "^5.0.2",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^5.0.2",
     "@openzeppelin/contracts-upgradeable": "^5.0.2",
-    "@openzeppelin/hardhat-upgrades":      "^3.2.1",
-    "@types/chai":                         "^4.3.16",
-    "@types/mocha":                        "^10.0.7",
-    "@types/node":                         "^20.14.10",
-    "chai":                                "^4.4.1",
-    "hardhat":                             "^2.22.7",
-    "ts-node":                             "^10.9.2",
-    "tsx":                                 "^4.16.2",
-    "typescript":                          "^5.5.3"
+    "@openzeppelin/hardhat-upgrades": "^3.2.1",
+    "@types/chai": "^4.3.16",
+    "@types/mocha": "^10.0.7",
+    "@types/node": "^20.14.10",
+    "chai": "^4.4.1",
+    "hardhat": "^2.22.7",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3"
   },
   "engines": {
     "node": ">=20.0.0"

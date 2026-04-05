@@ -30,6 +30,16 @@
       "address": "0x6379ee47C5087e200589Ea4F03141fc85ec53101",
       "txHash": "0xa8921ab627e55aae0ba11f7230de29552c08c95076be51e9baebe9c74f867293",
       "kind": "uups"
+    },
+    {
+      "address": "0xE151AA9b4bD036CB8aAFBb113f772Cf856D8BeC0",
+      "txHash": "0x1b14cc4c43a8406a073778310868448fb4c10fe74ff77cfa3812633d9d25a40f",
+      "kind": "uups"
+    },
+    {
+      "address": "0x936a414061a1B7F5dDb4C8DA1825730DaFd3074D",
+      "txHash": "0x46517642c60b98ebca363dfd6995c23058e0a9e1fb770a7a1c56436297d39ada",
+      "kind": "uups"
     }
   ],
   "impls": {
@@ -343,6 +353,129 @@
           },
           "t_mapping(t_address,t_bytes32)": {
             "label": "mapping(address => bytes32)",
+            "numberOfBytes": "32"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "7e17d0fb52db2a6d5273d0dff435c8c0e29bb6da703c50c5bdbeb64822cd6f57": {
+      "address": "0xfbBCCEd381a9Ce4CA18BeEdA5Ff5ff2FE922c150",
+      "txHash": "0xd0ac884951f28973bb5596a3c754e99b50b9b01da549454a40df9a19c26dbf83",
+      "layout": {
+        "solcVersion": "0.8.24",
+        "storage": [
+          {
+            "label": "databaseImplementation",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_address",
+            "contract": "Web3QLFactory",
+            "src": "contracts/Web3QLFactory.sol:43"
+          },
+          {
+            "label": "tableImplementation",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_address",
+            "contract": "Web3QLFactory",
+            "src": "contracts/Web3QLFactory.sol:45"
+          },
+          {
+            "label": "_userDatabases",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_mapping(t_address,t_array(t_address)dyn_storage)",
+            "contract": "Web3QLFactory",
+            "src": "contracts/Web3QLFactory.sol:47"
+          },
+          {
+            "label": "_allDatabases",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_array(t_address)dyn_storage",
+            "contract": "Web3QLFactory",
+            "src": "contracts/Web3QLFactory.sol:51"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)266_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)13_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_address)dyn_storage": {
+            "label": "address[]",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_array(t_address)dyn_storage)": {
+            "label": "mapping(address => address[])",
             "numberOfBytes": "32"
           }
         },
