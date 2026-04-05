@@ -2,10 +2,10 @@
 
 import { useState }                                                        from 'react';
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { TABLE_ABI, recordKey, roleLabel }                                 from '@/lib/contracts';
-import { toHex, isAddress }                                                from 'viem';
+import { TABLE_ABI, recordKey, roleLabel, MULTICALL3_ADDRESS, MULTICALL3_ABI } from '@/lib/contracts';
+import { toHex, isAddress, encodeFunctionData }                            from 'viem';
 import { toast }                                                           from 'sonner';
-import { AlertTriangle, ChevronLeft, ChevronRight }                        from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Pencil, X, Layers }    from 'lucide-react';
 
 interface Props {
   tableAddr: string;
@@ -18,6 +18,7 @@ export default function TableView({ tableAddr, tableName }: Props) {
   const { address } = useAccount();
   const addr = tableAddr as `0x${string}`;
   const [page, setPage] = useState(0);
+  const [writeTab, setWriteTab] = useState<'single' | 'batch'>('single');
   const offset = BigInt(page * PAGE_SIZE);
 
   const { data: total }   = useReadContract({ address: addr, abi: TABLE_ABI, functionName: 'totalRecords' });
@@ -28,7 +29,7 @@ export default function TableView({ tableAddr, tableName }: Props) {
     args: [address!], query: { enabled: !!address },
   });
   const { data: myKeys, refetch: refetchKeys } = useReadContract({
-    address: addr, abi: TABLE_ABI, functionName: 'getOwnerRecords',
+    address: addr, abi: TABLE_ABI, functionName: 'getActiveOwnerRecords',
     args: [address!, offset, BigInt(PAGE_SIZE)], query: { enabled: !!address },
   });
 
@@ -57,8 +58,37 @@ export default function TableView({ tableAddr, tableName }: Props) {
         </div>
       )}
 
-      {/* Write record */}
-      <WriteRecord tableAddr={addr} tableName={tableName} onDone={() => { setPage(0); refetchKeys(); }} />
+      {/* Write / Batch tabs */}
+      <div className="bg-zinc-900 border border-zinc-700/50 rounded-lg overflow-hidden">
+        <div className="flex border-b border-zinc-800">
+          <button
+            onClick={() => setWriteTab('single')}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${
+              writeTab === 'single'
+                ? 'text-violet-300 border-b-2 border-violet-500 -mb-px'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            Write Record
+          </button>
+          <button
+            onClick={() => setWriteTab('batch')}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${
+              writeTab === 'batch'
+                ? 'text-violet-300 border-b-2 border-violet-500 -mb-px'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            <Layers className="h-3.5 w-3.5" />
+            Batch Import
+            <span className="bg-violet-900/60 text-violet-300 text-[10px] px-1.5 py-0.5 rounded-full">gas-efficient</span>
+          </button>
+        </div>
+        {writeTab === 'single'
+          ? <WriteRecord tableAddr={addr} tableName={tableName} onDone={() => { setPage(0); refetchKeys(); }} />
+          : <BatchImport tableAddr={addr} tableName={tableName} onDone={() => { setPage(0); refetchKeys(); }} />
+        }
+      </div>
 
       {/* My records */}
       <div>
@@ -161,10 +191,7 @@ function WriteRecord({
   }
 
   return (
-    <div className="bg-zinc-900 border border-zinc-700/50 rounded-lg p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
-        Write Record
-      </h3>
+    <div className="p-4 flex flex-col gap-3">
 
       {/* Demo-mode plaintext warning */}
       <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-700/50 bg-amber-900/20 px-3 py-2">
@@ -212,6 +239,162 @@ function WriteRecord({
   );
 }
 
+// ─── Batch import (Multicall3) ────────────────────────────────────────────────
+
+function BatchImport({
+  tableAddr,
+  tableName,
+  onDone,
+}: {
+  tableAddr: `0x${string}`;
+  tableName: string;
+  onDone: () => void;
+}) {
+  const [raw, setRaw]         = useState('');
+  const [format, setFormat]   = useState<'csv' | 'json'>('csv');
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [preview, setPreview] = useState<{ pk: string; data: string }[]>([]);
+  const [done, setDone]       = useState(false);
+
+  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess }   = useWaitForTransactionReceipt({ hash });
+
+  if (isSuccess && !done) {
+    setDone(true);
+    setRaw('');
+    setPreview([]);
+    toast.success(`Batch written in one transaction`);
+    onDone();
+  }
+  if (!isSuccess && done) setDone(false);
+
+  function parseRows(text: string): { pk: string; data: string }[] {
+    if (format === 'json') {
+      try {
+        const arr = JSON.parse(text);
+        if (!Array.isArray(arr)) throw new Error('Expected JSON array');
+        return arr.map((r: { pk?: string; key?: string; data?: string; value?: string }, i: number) => ({
+          pk:   String(r.pk ?? r.key ?? i),
+          data: String(r.data ?? r.value ?? JSON.stringify(r)),
+        }));
+      } catch (e) {
+        toast.error('Invalid JSON: ' + (e as Error).message);
+        return [];
+      }
+    }
+    // CSV: pk,data — skip empty lines and header
+    return text
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l && !l.startsWith('#'))
+      .map(l => {
+        const comma = l.indexOf(',');
+        if (comma === -1) return { pk: l, data: '' };
+        return { pk: l.slice(0, comma).trim(), data: l.slice(comma + 1).trim() };
+      });
+  }
+
+  function handlePreview() {
+    const rows = parseRows(raw);
+    if (rows.length === 0) { toast.error('No valid rows found'); return; }
+    if (rows.length > 100) { toast.error('Max 100 records per batch (block gas limit)'); return; }
+    setPreview(rows);
+  }
+
+  function handleSubmit() {
+    if (preview.length === 0) return;
+    const calls = preview.map(({ pk, data }) => {
+      const key      = recordKey(tableName, pk.trim());
+      const cipher   = toHex(new TextEncoder().encode(data.trim() || pk.trim()));
+      const encKey   = toHex(new TextEncoder().encode('__plaintext_demo__'));
+      const callData = encodeFunctionData({
+        abi: TABLE_ABI, functionName: 'write', args: [key, cipher, encKey],
+      });
+      return { target: tableAddr, allowFailure: false, callData };
+    });
+
+    writeContract(
+      { address: MULTICALL3_ADDRESS, abi: MULTICALL3_ABI, functionName: 'aggregate3', args: [calls] },
+      { onError: (err) => toast.error(err.message?.split('\n')[0] ?? 'Batch failed') }
+    );
+  }
+
+  return (
+    <div className="p-4 flex flex-col gap-3">
+      {/* Demo warning */}
+      <div className="flex items-start gap-2 rounded-lg border border-amber-700/50 bg-amber-900/20 px-3 py-2">
+        <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+        <div className="flex-1">
+          <p className="text-xs text-amber-300 font-medium">Demo mode — data stored unencrypted</p>
+          <p className="text-xs text-amber-400/80 mt-0.5">All records submit in a single Multicall3 transaction, saving gas vs individual writes.</p>
+          <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
+            <input type="checkbox" checked={acknowledged} onChange={e => setAcknowledged(e.target.checked)} className="h-3.5 w-3.5 accent-amber-500" />
+            <span className="text-[11px] text-amber-400">I understand this data is public</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Format picker */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => { setFormat('csv'); setPreview([]); }}
+          className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${format === 'csv' ? 'border-violet-600 bg-violet-900/30 text-violet-300' : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'}`}
+        >CSV (pk,data)</button>
+        <button
+          onClick={() => { setFormat('json'); setPreview([]); }}
+          className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${format === 'json' ? 'border-violet-600 bg-violet-900/30 text-violet-300' : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'}`}
+        >JSON array</button>
+      </div>
+
+      <textarea
+        value={raw}
+        onChange={e => { setRaw(e.target.value); setPreview([]); }}
+        rows={6}
+        placeholder={format === 'csv'
+          ? 'user-1,{"name":"Alice","age":30}\nuser-2,{"name":"Bob","age":25}'
+          : '[{"pk":"user-1","data":"{\\"name\\":\\"Alice\\"}"},{"pk":"user-2","data":"{\\"name\\":\\"Bob\\"}"}]'}
+        className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500 font-mono resize-none"
+      />
+
+      {preview.length === 0 ? (
+        <button
+          onClick={handlePreview}
+          disabled={!raw.trim() || !acknowledged}
+          className="text-sm bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-colors"
+        >
+          Preview {raw.trim() ? `(${parseRows(raw).length} rows)` : ''}
+        </button>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <div className="bg-zinc-800 rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700">
+              <span className="text-xs text-zinc-400">{preview.length} records ready</span>
+              <button onClick={() => setPreview([])} className="text-zinc-500 hover:text-zinc-300">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="max-h-32 overflow-y-auto">
+              {preview.map((r, i) => (
+                <div key={i} className="flex gap-2 px-3 py-1.5 border-b border-zinc-800 last:border-0">
+                  <span className="text-xs text-violet-400 font-mono shrink-0 w-20 truncate">{r.pk}</span>
+                  <span className="text-xs text-zinc-400 font-mono truncate">{r.data}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={handleSubmit}
+            disabled={isPending || isConfirming}
+            className="text-sm bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            {isPending ? 'Confirm in wallet…' : isConfirming ? `Submitting ${preview.length} records…` : `Batch write ${preview.length} records (1 tx)`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Individual record row ────────────────────────────────────────────────────
 
 function RecordRow({
@@ -225,9 +408,12 @@ function RecordRow({
 }) {
   const [expanded, setExpanded]       = useState(false);
   const [showCollabs, setShowCollabs] = useState(false);
-  const [delDoneHandled, setDelDoneHandled] = useState(false);
+  const [editing, setEditing]         = useState(false);
+  const [editData, setEditData]       = useState('');
+  const [delDoneHandled, setDelDoneHandled]     = useState(false);
+  const [editDoneHandled, setEditDoneHandled]   = useState(false);
 
-  const { data: rec } = useReadContract({
+  const { data: rec, refetch: refetchRec } = useReadContract({
     address: tableAddr, abi: TABLE_ABI, functionName: 'read', args: [key],
   });
   const { data: collabs, refetch: refetchCollabs } = useReadContract({
@@ -236,12 +422,23 @@ function RecordRow({
   });
   const { writeContract, data: delHash, isPending: delPending } = useWriteContract();
   const { isLoading: delConfirming, isSuccess: delDone } = useWaitForTransactionReceipt({ hash: delHash });
+  const { writeContract: updateWrite, data: updHash, isPending: updPending } = useWriteContract();
+  const { isLoading: updConfirming, isSuccess: updDone } = useWaitForTransactionReceipt({ hash: updHash });
 
   if (delDone && !delDoneHandled) {
     setDelDoneHandled(true);
     toast.success('Record deleted');
     onDone();
   }
+
+  if (updDone && !editDoneHandled) {
+    setEditDoneHandled(true);
+    setEditing(false);
+    toast.success('Record updated on-chain');
+    refetchRec();
+    onDone();
+  }
+  if (!updDone && editDoneHandled) setEditDoneHandled(false);
 
   if (!rec) return null;
   const recTuple = rec as unknown as [`0x${string}`, boolean, bigint, bigint, `0x${string}`];
@@ -280,10 +477,54 @@ function RecordRow({
       {expanded && (
         <div className="px-4 pb-4 flex flex-col gap-3 border-t border-zinc-800">
           <div className="mt-3">
-            <p className="text-xs text-zinc-500 mb-1">Data (stored unencrypted in demo)</p>
-            <pre className="text-xs font-mono text-violet-400 bg-zinc-800 rounded p-2 whitespace-pre-wrap break-all">
-              {plaintext}
-            </pre>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs text-zinc-500">Data (stored unencrypted in demo)</p>
+              {!editing && (
+                <button
+                  onClick={() => { setEditing(true); setEditData(plaintext); }}
+                  className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors"
+                  aria-label="Edit record"
+                >
+                  <Pencil className="h-3 w-3" /> Edit
+                </button>
+              )}
+            </div>
+            {editing ? (
+              <div className="flex flex-col gap-2">
+                <textarea
+                  value={editData}
+                  onChange={e => setEditData(e.target.value)}
+                  rows={4}
+                  className="bg-zinc-800 border border-violet-700 rounded-lg px-3 py-2 text-xs font-mono text-zinc-100 focus:outline-none focus:border-violet-500 resize-none w-full"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      const cipher = toHex(new TextEncoder().encode(editData.trim()));
+                      const encKey = toHex(new TextEncoder().encode('__plaintext_demo__'));
+                      updateWrite(
+                        { address: tableAddr, abi: TABLE_ABI, functionName: 'update', args: [key, cipher, encKey] },
+                        { onError: (err) => toast.error(err.message?.split('\n')[0] ?? 'Update failed') }
+                      );
+                    }}
+                    disabled={updPending || updConfirming || !editData.trim()}
+                    className="text-xs bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    {updPending ? 'Confirm in wallet…' : updConfirming ? 'Updating…' : 'Save update'}
+                  </button>
+                  <button
+                    onClick={() => setEditing(false)}
+                    className="text-xs border border-zinc-700 text-zinc-400 hover:text-zinc-200 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <pre className="text-xs font-mono text-violet-400 bg-zinc-800 rounded p-2 whitespace-pre-wrap break-all">
+                {plaintext}
+              </pre>
+            )}
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">

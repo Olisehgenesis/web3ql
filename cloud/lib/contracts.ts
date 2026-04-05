@@ -5,6 +5,35 @@
 
 // ─── Addresses ────────────────────────────────────────────────────────────────
 
+// ─── Multicall3 ──────────────────────────────────────────────────────────────
+// Deployed at the canonical address on all major EVM chains including Celo.
+export const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11' as `0x${string}`;
+
+export const MULTICALL3_ABI = [
+  {
+    name: 'aggregate3',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [{
+      name: 'calls',
+      type: 'tuple[]',
+      components: [
+        { name: 'target',       type: 'address' },
+        { name: 'allowFailure', type: 'bool'    },
+        { name: 'callData',     type: 'bytes'   },
+      ],
+    }],
+    outputs: [{
+      name: 'returnData',
+      type: 'tuple[]',
+      components: [
+        { name: 'success',    type: 'bool'  },
+        { name: 'returnData', type: 'bytes' },
+      ],
+    }],
+  },
+] as const;
+
 export const FACTORY_ADDRESS =
   (process.env.NEXT_PUBLIC_FACTORY_ADDRESS ??
     '0x2cfE616062261927fCcC727333d6dD3D5880FDd1') as `0x${string}`;
@@ -109,6 +138,18 @@ export const DATABASE_ABI = [
       { name: 'tableContract', type: 'address', indexed: false },
       { name: 'owner',         type: 'address', indexed: true },
     ],
+  },
+  {
+    name: 'dropTable',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'name', type: 'string' }],
+    outputs: [],
+  },
+  {
+    name: 'TableDropped',
+    type: 'event',
+    inputs: [{ name: 'name', type: 'string', indexed: true }],
   },
 ] as const;
 
@@ -216,6 +257,17 @@ export const TABLE_ABI = [
       { name: 'user',     type: 'address' },
     ],
     outputs: [{ type: 'uint8' }],
+  },
+  {
+    name: 'getActiveOwnerRecords',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'addr',  type: 'address' },
+      { name: 'start', type: 'uint256' },
+      { name: 'limit', type: 'uint256' },
+    ],
+    outputs: [{ name: 'result', type: 'bytes32[]' }],
   },
   {
     name: 'write',

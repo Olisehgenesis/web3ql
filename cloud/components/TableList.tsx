@@ -8,6 +8,7 @@ import { SchemaBuilder }                                                        
 import { schemaToSQL }                                                                 from '@/lib/utils/schema';
 import type { SchemaField }                                                            from '@/lib/utils/schema';
 import { encodeSchema }                                                                from '@/lib/utils/schema';
+import { Trash2 }                                                                      from 'lucide-react';
 
 interface Props {
   dbAddr: string;
@@ -116,6 +117,7 @@ export default function TableList({ dbAddr, onSelect, selected }: Props) {
               name={name}
               selected={selected === name}
               onSelect={onSelect}
+              onDropped={() => refetch()}
             />
           ))
         )}
@@ -129,12 +131,17 @@ function TableRow({
   name,
   selected,
   onSelect,
+  onDropped,
 }: {
   dbAddr: string;
   name: string;
   selected: boolean;
   onSelect: (addr: string, name: string) => void;
+  onDropped: () => void;
 }) {
+  const [confirmDrop, setConfirmDrop] = useState(false);
+  const [dropDoneHandled, setDropDoneHandled] = useState(false);
+
   const { data: tableAddr } = useReadContract({
     address:      dbAddr as `0x${string}`,
     abi:          DATABASE_ABI,
@@ -148,19 +155,69 @@ function TableRow({
     query:        { enabled: !!tableAddr },
   });
 
+  const { writeContract, data: dropHash, isPending: dropPending } = useWriteContract();
+  const { isLoading: dropConfirming, isSuccess: dropDone } = useWaitForTransactionReceipt({ hash: dropHash });
+
+  if (dropDone && !dropDoneHandled) {
+    setDropDoneHandled(true);
+    toast.success(`Table "${name}" dropped`);
+    onDropped();
+  }
+
+  function handleDrop(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!confirmDrop) { setConfirmDrop(true); return; }
+    setConfirmDrop(false);
+    writeContract(
+      { address: dbAddr as `0x${string}`, abi: DATABASE_ABI, functionName: 'dropTable', args: [name] },
+      { onError: (err) => toast.error(err.message?.split('\n')[0] ?? 'Drop failed') }
+    );
+  }
+
   return (
-    <button
-      onClick={() => tableAddr && onSelect(tableAddr as string, name)}
-      className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-colors text-sm ${
-        selected
-          ? 'bg-sky-900/40 border border-sky-700 text-sky-300'
-          : 'bg-zinc-800/50 border border-zinc-700/50 hover:border-zinc-600 text-zinc-300'
-      }`}
-    >
-      <span className="font-mono">{name}</span>
-      <span className="text-xs text-zinc-500 shrink-0 ml-2">
-        {active?.toString() ?? '?'} rows
-      </span>
-    </button>
+    <div className={`flex items-center justify-between rounded-lg border transition-colors text-sm ${
+      selected
+        ? 'bg-sky-900/40 border-sky-700'
+        : 'bg-zinc-800/50 border-zinc-700/50 hover:border-zinc-600'
+    }`}>
+      <button
+        onClick={() => tableAddr && onSelect(tableAddr as string, name)}
+        className={`flex-1 flex items-center justify-between px-3 py-2.5 text-left ${
+          selected ? 'text-sky-300' : 'text-zinc-300'
+        }`}
+      >
+        <span className="font-mono">{name}</span>
+        <span className="text-xs text-zinc-500 shrink-0 ml-2">
+          {active?.toString() ?? '?'} rows
+        </span>
+      </button>
+
+      {/* Drop button */}
+      {confirmDrop ? (
+        <div className="flex items-center gap-1 pr-2 shrink-0">
+          <button
+            onClick={handleDrop}
+            disabled={dropPending || dropConfirming}
+            className="text-[11px] bg-red-700 hover:bg-red-600 disabled:opacity-40 text-white px-2 py-1 rounded transition-colors"
+          >
+            {dropPending ? 'Confirm…' : dropConfirming ? 'Dropping…' : 'Confirm drop'}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setConfirmDrop(false); }}
+            className="text-[11px] text-zinc-500 hover:text-zinc-300 px-1 py-1"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={handleDrop}
+          aria-label={`Drop table ${name}`}
+          className="shrink-0 mr-2 p-1.5 text-zinc-600 hover:text-red-400 transition-colors rounded"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
   );
 }
