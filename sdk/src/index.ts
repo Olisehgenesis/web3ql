@@ -36,6 +36,18 @@ export { EncryptedTableClient, Role }                 from './table-client.js';
 export type { RawRecord }                             from './table-client.js';
 export { PublicKeyRegistryClient }                    from './registry.js';
 
+// ── Errors ────────────────────────────────────────────────────
+export {
+  Web3QLError,
+  SchemaValidationError,
+  RecordNotFoundError,
+  VersionConflictError,
+  DecryptionError,
+  AccessDeniedError,
+  BatchError,
+}                                                     from './errors.js';
+export type { BatchResult }                           from './errors.js';
+
 // ── High-level typed API (Prisma-style) ───────────────────────
 export { TypedTableClient }                           from './typed-table.js';
 export type {
@@ -122,7 +134,6 @@ export type { CrossTableOp }                          from './batch.js';
 // ── v1.2 Advanced access control ─────────────────────────────
 export {
   AccessManager,
-  PublicTableClient,
   grantMetaKey,
   generateColumnKeySet,
   encryptWithColumnKeys,
@@ -133,6 +144,20 @@ export type {
   CapabilityToken,
   ColumnKeySet,
 }                                                     from './access.js';
+
+// ── Public table (Web3QLPublicTable) ──────────────────────────
+export {
+  PublicTableClient,
+  PublicTableValidationError,
+  computeFieldKeys,
+  derivePublicKey,
+  validatePublicRecord,
+}                                                     from './public-table-client.js';
+export type {
+  PublicRawRecord,
+  PublicRecordResult,
+  PublicFindManyOptions,
+}                                                     from './public-table-client.js';
 
 // ── v1.2 Schema management ────────────────────────────────────
 export {

@@ -270,74 +270,26 @@ export class AccessManager {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Public table mode  (no encryption)
+//  Public table client — re-exported from dedicated module
 // ─────────────────────────────────────────────────────────────
 
-const PUBLIC_TABLE_ABI = [
-  'function write(bytes32 key, bytes calldata ciphertext, bytes calldata encryptedKey) external',
-  'function read(bytes32 key) external view returns (bytes memory ciphertext, bool deleted, uint256 version, uint256 updatedAt, address owner)',
-  'function update(bytes32 key, bytes calldata ciphertext, bytes calldata encryptedKey) external',
-  'function deleteRecord(bytes32 key) external',
-  'function recordExists(bytes32 key) external view returns (bool)',
-] as const;
-
 /**
- * PublicTableClient wraps a Web3QL table contract in "no-encryption" mode.
- *
- * Data is stored as raw UTF-8 bytes.  Anyone who knows the table address can
- * read every record directly on-chain — no symmetric key required.
- *
- * Use cases: leaderboards, public voting tallies, open datasets.
- *
- * ⚠  All data is FULLY PUBLIC. Do not store sensitive information.
+ * PublicTableClient has been moved to public-table-client.ts to align with
+ * the Web3QLPublicTable contract (plaintext, field-key schema validation,
+ * open writes by default).  The export here keeps the old import path working.
  */
-export class PublicTableClient {
-  readonly tableAddress: string;
-  private contract     : ethers.Contract;
-  private signer       : ethers.Signer;
-
-  constructor(tableAddress: string, signer: ethers.Signer) {
-    this.tableAddress = tableAddress;
-    this.signer       = signer;
-    this.contract     = new ethers.Contract(tableAddress, PUBLIC_TABLE_ABI, signer);
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private get c(): any { return this.contract; }
-
-  deriveKey(tableName: string, id: bigint): string {
-    return ethers.solidityPackedKeccak256(['string', 'uint256'], [tableName, id]);
-  }
-
-  async write(key: string, plaintext: string): Promise<ethers.TransactionReceipt> {
-    const data = new TextEncoder().encode(plaintext);
-    // Contract requires encryptedKey.length > 0 — use 1-byte public marker
-    const publicMarker = new Uint8Array([0x50]); // 'P' for Public
-    const tx = await this.c.write(key, data, publicMarker);
-    return tx.wait();
-  }
-
-  async read(key: string): Promise<string> {
-    const [ciphertext /* rest ignored */] = await this.c.read(key);
-    return new TextDecoder().decode(ethers.getBytes(ciphertext as string));
-  }
-
-  async update(key: string, plaintext: string): Promise<ethers.TransactionReceipt> {
-    const data = new TextEncoder().encode(plaintext);
-    const publicMarker = new Uint8Array([0x50]);
-    const tx = await this.c.update(key, data, publicMarker);
-    return tx.wait();
-  }
-
-  async delete(key: string): Promise<ethers.TransactionReceipt> {
-    const tx = await this.c.deleteRecord(key);
-    return tx.wait();
-  }
-
-  async exists(key: string): Promise<boolean> {
-    return this.c.recordExists(key) as Promise<boolean>;
-  }
-}
+export {
+  PublicTableClient,
+  PublicTableValidationError,
+  computeFieldKeys,
+  derivePublicKey,
+  validatePublicRecord,
+}                                                     from './public-table-client.js';
+export type {
+  PublicRawRecord,
+  PublicRecordResult,
+  PublicFindManyOptions,
+}                                                     from './public-table-client.js';
 
 // ─────────────────────────────────────────────────────────────
 //  Column-level encryption helpers

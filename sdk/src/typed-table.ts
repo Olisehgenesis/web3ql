@@ -52,6 +52,7 @@ import {
   AggregateOptions,
   AggregateResult,
 }                                    from './query.js';
+import { RecordNotFoundError }       from './errors.js';
 
 export type { SchemaDefinition }     from './types.js';
 
@@ -136,18 +137,21 @@ export class TypedTableClient<T extends Record<string, unknown>> {
 
   // ── Internal encode/decode ──────────────────────────────────
 
-  private encode(data: T): string {
-    if (this.schema) {
-      const wire = validateAndEncode(this.schema, data as Record<string, unknown>);
-      return JSON.stringify(wire);
-    }
-    return JSON.stringify(data);
+  private encode(data: T, schemaVersion = 0): string {
+    const base = this.schema
+      ? validateAndEncode(this.schema, data as Record<string, unknown>)
+      : (data as Record<string, unknown>);
+    // Stamp __v so MigrationRunner can determine which migrations to apply on read.
+    return JSON.stringify({ __v: schemaVersion, ...base });
   }
 
   private decode(plaintext: string): T {
     const parsed = JSON.parse(plaintext) as Record<string, unknown>;
-    if (this.schema) return decodeRow(this.schema, parsed) as T;
-    return parsed as T;
+    // Strip the protocol-internal __v field before returning to caller.
+    const { __v: _version, ...rest } = parsed;
+    void _version;
+    if (this.schema) return decodeRow(this.schema, rest) as T;
+    return rest as T;
   }
 
   // ── Write ───────────────────────────────────────────────────
@@ -157,7 +161,8 @@ export class TypedTableClient<T extends Record<string, unknown>> {
    * Throws if a non-deleted record with the same id already exists.
    */
   async create(id: bigint, data: T): Promise<ethers.TransactionReceipt> {
-    return this.inner.writeRaw(this.key(id), this.encode(data));
+    const schemaVersion = await this.inner.getSchemaVersion();
+    return this.inner.writeRaw(this.key(id), this.encode(data, schemaVersion));
   }
 
   /**

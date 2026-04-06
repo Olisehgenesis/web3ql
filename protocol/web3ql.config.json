@@ -13,20 +13,21 @@
     "deployer": "0xB8f936be2B12406391B4232647593Cdb62dF2203"
   },
   "celoSepolia": {
-    "factoryAddress": "0xA6356407582505468177DC23630c52F3c55BE267",
-    "databaseImpl": "0x5655774d110BEe031dd001f46BA588A483A861D8",
-    "tableImpl": "0x167e5E9baBb7cB3EDf7586f4944a07Ca73994014",
-    "registryAddress": "0x72C5900CcA8FbF5C3dB2115df8c403E70BBc50A1",
-    "cloudDatabase": "0x14b299464e690a16d0a960e7ed8cf787eF90a852",
-    "deployedAt": "2026-04-05T13:50:33.054Z",
+    "factoryAddress": "0xBD12F9FF57DA52Bb668fB8d89554A4dEE9396273",
+    "databaseImpl": "0xd8a4D5AbE1054Efa2C4E1F655CfA5ff24cbE4AAD",
+    "tableImpl": "0x24DA4c5dAABf10174caf0ab8A778e8Cd944E0Fe6",
+    "registryAddress": "0x8337711d216bA45600b8660377Eba4b437c0C7Bb",
+    "cloudDatabase": "0x64137BfBf09f03392Ce171DD0828F8d995AB102a",
+    "deployedAt": "2026-04-05T16:31:02.514Z",
     "deployer": "0xB8f936be2B12406391B4232647593Cdb62dF2203"
   },
   "celo": {
-    "factoryAddress": "0x3356D6661e0DA132c41549Bc0D20c5f3e98BE27a",
-    "databaseImpl": "0xA316CcC0D5e5951933A08e560c1272e3f7008593",
-    "tableImpl": "0xE8A3d1fe72d1a7701F5DA0E7069380aAd6fC5962",
-    "registryAddress": "0xd878E5304eFE9ec8f97FD811D8fbb516d1EbF9DF",
-    "deployedAt": "2026-04-05T06:16:12.520Z",
+    "factoryAddress": "0x3ed8a3FFDE93f837a6CcFacd4a0684087c0DA4df",
+    "databaseImpl": "0x804bb08f7Ede7Ae94B955B08F1e30c56243bEB7F",
+    "tableImpl": "0x57947893a83AECE5FbbbbbE2379942BE8122A14D",
+    "registryAddress": "0x349325F2D893a2493f78d873287E07175d32fde9",
+    "cloudDatabase": "0xb7387db11622803626134ECE42FCb18Bf9Bf414C",
+    "deployedAt": "2026-04-05T16:05:35.932Z",
     "deployer": "0xB8f936be2B12406391B4232647593Cdb62dF2203"
   }
 }

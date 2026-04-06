@@ -16,9 +16,10 @@ import "./Web3QLTable.sol";
  *         Web3QLDatabase contract (as a UUPS proxy).  The factory
  *         tracks all databases per owner.
  *
- *         Both the Database and Table proxies share implementation
- *         contracts managed here, keeping per-user deployment cost
- *         minimal (only proxy creation overhead ~ 45k gas each).
+ *         Three shared implementation contracts are managed here:
+ *           • databaseImplementation      — Web3QLDatabase logic
+ *           • tableImplementation         — Web3QLTable (private) logic
+ *           • publicTableImplementation   — Web3QLPublicTable logic
  *
  * @dev    The factory itself is UUPS-upgradeable so the Web3QL team
  *         can push improvements without redeploying user databases.
@@ -35,6 +36,7 @@ contract Web3QLFactory is
     /// Shared implementation contracts (upgraded by factory owner).
     address public databaseImplementation;
     address public tableImplementation;
+    address public publicTableImplementation;
 
     /// user → list of database proxy addresses
     mapping(address => address[]) private _userDatabases;
@@ -51,7 +53,11 @@ contract Web3QLFactory is
         address indexed db,
         uint256 indexed index
     );
-    event ImplementationsUpdated(address dbImpl, address tableImpl);
+    event ImplementationsUpdated(
+        address dbImpl,
+        address tableImpl,
+        address publicTableImpl
+    );
 
     // ─────────────────────────────────────────────────────────────
     //  Initializer
@@ -62,19 +68,23 @@ contract Web3QLFactory is
 
     /**
      * @param _owner               Protocol admin (multisig recommended).
-     * @param _databaseImpl        Address of the deployed Web3QLDatabase logic.
-     * @param _tableImpl           Address of the deployed Web3QLTable logic.
+     * @param _databaseImpl        Deployed Web3QLDatabase logic address.
+     * @param _tableImpl           Deployed Web3QLTable (private) logic address.
+     * @param _publicTableImpl     Deployed Web3QLPublicTable logic address.
      */
     function initialize(
         address _owner,
         address _databaseImpl,
-        address _tableImpl
+        address _tableImpl,
+        address _publicTableImpl
     ) external initializer {
         __Ownable_init(_owner);
-        require(_databaseImpl != address(0), "Web3QLFactory: zero databaseImpl");
-        require(_tableImpl    != address(0), "Web3QLFactory: zero tableImpl");
-        databaseImplementation = _databaseImpl;
-        tableImplementation    = _tableImpl;
+        require(_databaseImpl    != address(0), "Web3QLFactory: zero databaseImpl");
+        require(_tableImpl       != address(0), "Web3QLFactory: zero tableImpl");
+        require(_publicTableImpl != address(0), "Web3QLFactory: zero publicTableImpl");
+        databaseImplementation    = _databaseImpl;
+        tableImplementation       = _tableImpl;
+        publicTableImplementation = _publicTableImpl;
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
@@ -88,15 +98,16 @@ contract Web3QLFactory is
      * @return db  Address of the new database proxy.
      *
      * @dev  The database proxy is initialised with:
-     *         - owner = msg.sender
-     *         - tableImplementation = factory.tableImplementation
+     *         - owner                   = msg.sender
+     *         - tableImplementation     = factory.tableImplementation
+     *         - publicTableImplementation = factory.publicTableImplementation
      *       so the user controls their own database independently of the
      *       factory after deployment.
      */
     function createDatabase(string calldata name) external returns (address db) {
         bytes memory initData = abi.encodeCall(
             Web3QLDatabase.initialize,
-            (msg.sender, tableImplementation, name)
+            (msg.sender, tableImplementation, publicTableImplementation, name)
         );
 
         db = address(new ERC1967Proxy(databaseImplementation, initData));
@@ -164,12 +175,15 @@ contract Web3QLFactory is
      */
     function setImplementations(
         address newDatabaseImpl,
-        address newTableImpl
+        address newTableImpl,
+        address newPublicTableImpl
     ) external onlyOwner {
-        require(newDatabaseImpl != address(0), "Web3QLFactory: zero databaseImpl");
-        require(newTableImpl    != address(0), "Web3QLFactory: zero tableImpl");
-        databaseImplementation = newDatabaseImpl;
-        tableImplementation    = newTableImpl;
-        emit ImplementationsUpdated(newDatabaseImpl, newTableImpl);
+        require(newDatabaseImpl    != address(0), "Web3QLFactory: zero databaseImpl");
+        require(newTableImpl       != address(0), "Web3QLFactory: zero tableImpl");
+        require(newPublicTableImpl != address(0), "Web3QLFactory: zero publicTableImpl");
+        databaseImplementation    = newDatabaseImpl;
+        tableImplementation       = newTableImpl;
+        publicTableImplementation = newPublicTableImpl;
+        emit ImplementationsUpdated(newDatabaseImpl, newTableImpl, newPublicTableImpl);
     }
 }

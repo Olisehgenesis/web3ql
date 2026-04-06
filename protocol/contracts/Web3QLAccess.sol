@@ -98,6 +98,31 @@ abstract contract Web3QLAccess {
         emit RoleRevoked(resource, user, msg.sender);
     }
 
+    /**
+     * @dev Admin-bypass grant: skips the caller-must-be-resource-owner check.
+     *      Use only after verifying authority at the call site (e.g. table admin
+     *      granting roles on records they did not write themselves).
+     */
+    function _adminGrantRole(bytes32 resource, address user, Role role) internal {
+        require(user != address(0), "Web3QLAccess: zero address");
+        require(role != Role.NONE && role < Role.OWNER, "Web3QLAccess: invalid role");
+        _permissions[resource][user] = role;
+        emit RoleGranted(resource, user, role, msg.sender);
+    }
+
+    /**
+     * @dev Admin-bypass revoke: skips the caller-must-be-resource-owner check.
+     *      Cannot revoke an OWNER role (ownership transfer is a separate operation).
+     */
+    function _adminRevokeRole(bytes32 resource, address user) internal {
+        require(
+            _permissions[resource][user] != Role.OWNER,
+            "Web3QLAccess: cannot revoke owner"
+        );
+        delete _permissions[resource][user];
+        emit RoleRevoked(resource, user, msg.sender);
+    }
+
     // ─────────────────────────────────────────────────────────────
     //  Public views
     // ─────────────────────────────────────────────────────────────

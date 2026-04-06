@@ -40,13 +40,19 @@ contract Web3QLTable is
     //  Types
     // ─────────────────────────────────────────────────────────────
 
+    /**
+     * @dev Packed into 2 storage slots (was 5):
+     *      Slot 0: pointer to dynamic `ciphertext` bytes.
+     *      Slot 1: address(20) + bool(1) + uint32(4) + uint48(6) + uint8(1) = 32 bytes.
+     *      Saves ~60k gas per write vs the unpacked layout.
+     */
     struct RecordMeta {
-        bytes    ciphertext;
-        address  owner;
-        bool     deleted;
-        uint256  version;
-        uint256  updatedAt;
-        uint8    collaboratorCount;
+        bytes   ciphertext;        // slot 0 — pointer to dynamic bytes
+        address owner;             // slot 1 — 20 bytes
+        bool    deleted;           //           1 byte
+        uint32  version;           //           4 bytes  (max ~4B versions)
+        uint48  updatedAt;         //           6 bytes  (valid past year 10 000)
+        uint8   collaboratorCount; //           1 byte  (total: 32 B — 1 slot)
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -74,8 +80,24 @@ contract Web3QLTable is
     /// Current non-deleted record count.
     uint256 public activeRecords;
 
+    /// Table-level writer allowlist. Only enforced when restrictedWrites = true.
+    mapping(address => bool) public tableWriters;
+
+    /// When true, only addresses in tableWriters may call write().
+    /// Defaults to false — open/public table (anyone can write).
+    bool public restrictedWrites;
+
     /// Owner → append-only list of record keys they have written.
     mapping(address => bytes32[]) private _ownerKeys;
+
+    /// O(1) dedup guard — prevents linear scan on key reuse after delete.
+    mapping(address => mapping(bytes32 => bool)) private _ownerKeyListed;
+
+    /// When true, only record owners/collaborators and the table admin can read.
+    bool public gatedRead;
+
+    /// Monotonically increasing schema version. Starts at 0 on deploy.
+    uint32 public schemaVersion;
 
     // ─── Counter / Relation state ────────────────────────────────
 
@@ -98,6 +120,11 @@ contract Web3QLTable is
     event CounterUpdated(bytes32 indexed targetKey, bytes32 indexed field, uint256 newValue);
     event WireRegistered(address indexed wire, bytes32[] fields);
     event WireRevoked(address indexed wire, bytes32[] fields);
+    event TableWriterAdded(address indexed writer);
+    event TableWriterRemoved(address indexed writer);
+    event RestrictedWritesUpdated(bool restricted);
+    event SchemaUpdated(uint32 indexed version, bytes newSchemaBytes);
+    event GatedReadUpdated(bool gated);
 
     // ─────────────────────────────────────────────────────────────
     //  Initializer (replaces constructor for UUPS proxy)
@@ -133,6 +160,9 @@ contract Web3QLTable is
         bytes calldata ciphertext,
         bytes calldata encryptedKey
     ) external {
+        if (restrictedWrites) {
+            require(tableWriters[msg.sender], "Web3QLTable: not an authorized writer");
+        }
         RecordMeta storage rec = _records[key];
         require(
             rec.owner == address(0) || rec.deleted,
@@ -153,7 +183,7 @@ contract Web3QLTable is
         rec.owner               = msg.sender;
         rec.deleted             = false;
         rec.version             += 1;
-        rec.updatedAt           = block.timestamp;
+        rec.updatedAt           = uint48(block.timestamp);
         rec.collaboratorCount   = 1;
 
         _encryptedKeys[key][msg.sender] = encryptedKey;
@@ -161,19 +191,11 @@ contract Web3QLTable is
 
         if (isNew) {
             totalRecords++;
-            // Only append to _ownerKeys on first-ever write — prevents duplicates
-            // when a deleted key is reused (which sets isNew = false).
+        }
+        // O(1) dedup: append to _ownerKeys only once per (owner, key) pair.
+        if (!_ownerKeyListed[msg.sender][key]) {
             _ownerKeys[msg.sender].push(key);
-        } else if (wasDeleted) {
-            // Key is being reused after deletion: only append if not already listed.
-            bytes32[] storage ownerList = _ownerKeys[msg.sender];
-            bool alreadyListed = false;
-            uint256 listLen = ownerList.length;
-            for (uint256 j = 0; j < listLen; ) {
-                if (ownerList[j] == key) { alreadyListed = true; break; }
-                unchecked { ++j; }
-            }
-            if (!alreadyListed) _ownerKeys[msg.sender].push(key);
+            _ownerKeyListed[msg.sender][key] = true;
         }
         activeRecords++;
 
@@ -201,6 +223,14 @@ contract Web3QLTable is
             address      owner_
         )
     {
+        if (gatedRead) {
+            require(
+                _records[key].owner == msg.sender ||
+                hasRole(key, msg.sender, Role.VIEWER) ||
+                msg.sender == owner(),
+                "Web3QLTable: read access denied"
+            );
+        }
         RecordMeta storage rec = _records[key];
         return (rec.ciphertext, rec.deleted, rec.version, rec.updatedAt, rec.owner);
     }
@@ -226,11 +256,14 @@ contract Web3QLTable is
     /**
      * @notice Update ciphertext and the caller's encrypted key copy.
      *         For full key rotation: call this then grantAccess for each collaborator.
+     * @param expectedVersion  Pass the version you read to enable optimistic locking.
+     *                         Pass 0 to skip the check (last-writer-wins).
      */
     function update(
         bytes32 key,
         bytes calldata ciphertext,
-        bytes calldata encryptedKey
+        bytes calldata encryptedKey,
+        uint32 expectedVersion
     ) external {
         require(
             _records[key].owner == msg.sender || hasRole(key, msg.sender, Role.EDITOR),
@@ -241,9 +274,13 @@ contract Web3QLTable is
         require(ciphertext.length  > 0, "Web3QLTable: empty ciphertext");
         require(encryptedKey.length > 0, "Web3QLTable: empty encryptedKey");
 
+        if (expectedVersion != 0) {
+            require(rec.version == expectedVersion, "Web3QLTable: version conflict");
+        }
+
         rec.ciphertext  = ciphertext;
-        rec.version     += 1;
-        rec.updatedAt   = block.timestamp;
+        rec.version    += 1;
+        rec.updatedAt   = uint48(block.timestamp);
         _encryptedKeys[key][msg.sender] = encryptedKey;
 
         emit RecordUpdated(key, msg.sender, rec.version, rec.updatedAt);
@@ -277,8 +314,8 @@ contract Web3QLTable is
         delete _collaborators[key];
 
         rec.deleted             = true;
-        rec.version             += 1;
-        rec.updatedAt           = block.timestamp;
+        rec.version            += 1;
+        rec.updatedAt           = uint48(block.timestamp);
         rec.collaboratorCount   = 0;
         activeRecords--;
 
@@ -436,6 +473,32 @@ contract Web3QLTable is
     }
 
     // ─────────────────────────────────────────────────────────────
+    //  Schema management
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Update the table schema. Only the table owner may call this.
+     *         Increments schemaVersion so SDK clients can stamp __v on writes.
+     *         Does NOT re-validate existing records — use MigrationRunner for that.
+     */
+    function updateSchema(bytes calldata newSchemaBytes) external onlyOwner {
+        require(newSchemaBytes.length > 0, "Web3QLTable: empty schema");
+        schemaBytes    = newSchemaBytes;
+        schemaVersion += 1;
+        emit SchemaUpdated(schemaVersion, newSchemaBytes);
+    }
+
+    /**
+     * @notice Toggle gated reads.
+     *         When true, only record owner, collaborators, and table admin can read.
+     *         When false (default), ciphertext is visible to anyone (decrypt off-chain).
+     */
+    function setGatedRead(bool _gated) external onlyOwner {
+        gatedRead = _gated;
+        emit GatedReadUpdated(_gated);
+    }
+
+    // ─────────────────────────────────────────────────────────────
     //  Security: block inherited role bypass paths
     // ─────────────────────────────────────────────────────────────
 
@@ -479,6 +542,38 @@ contract Web3QLTable is
             unchecked { ++i; }
         }
         emit WireRevoked(wire, fields);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    //  Table-level write access control
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Add an address to the table-level writer allowlist.
+     *         Only has effect when restrictedWrites = true.
+     */
+    function addTableWriter(address writer) external onlyOwner {
+        require(writer != address(0), "Web3QLTable: zero address");
+        tableWriters[writer] = true;
+        emit TableWriterAdded(writer);
+    }
+
+    /**
+     * @notice Remove an address from the table-level writer allowlist.
+     */
+    function removeTableWriter(address writer) external onlyOwner {
+        tableWriters[writer] = false;
+        emit TableWriterRemoved(writer);
+    }
+
+    /**
+     * @notice Toggle restricted write mode.
+     *         false (default) = open/public table — anyone can write.
+     *         true            = only tableWriters allowlist can write.
+     */
+    function setRestrictedWrites(bool restricted) external onlyOwner {
+        restrictedWrites = restricted;
+        emit RestrictedWritesUpdated(restricted);
     }
 
     /**

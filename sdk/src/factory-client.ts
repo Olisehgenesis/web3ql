@@ -46,7 +46,7 @@ const DATABASE_ABI = [
   'function createTable(string calldata name, bytes calldata schemaBytes) external returns (address)',
   'function getTable(string calldata name) external view returns (address)',
   'function listTables() external view returns (string[] memory)',
-  'event TableCreated(string name, address indexed tableContract, address indexed owner)',
+  'event TableCreated(string indexed name, address tableContract, address indexed owner)',
 ] as const;
 
 // ─────────────────────────────────────────────────────────────

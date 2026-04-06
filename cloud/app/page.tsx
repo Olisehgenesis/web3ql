@@ -110,16 +110,19 @@ export default function LandingPage() {
               </thead>
               <tbody>
                 {[
-                  { feature: "Data ownership",          pg: "❌ Server owner",    mongo: "❌ Atlas/cloud",    fire: "❌ Google",         tbl: "⚠️ Validators",          w3ql: "✅ Your wallet"      },
-                  { feature: "End-to-end encryption",   pg: "⚠️ TLS only",        mongo: "⚠️ TLS only",       fire: "⚠️ TLS only",       tbl: "❌ Plaintext on-chain",  w3ql: "✅ NaCl per-record"  },
-                  { feature: "Permissionless deploy",   pg: "❌ Infra required",  mongo: "❌ Atlas account",  fire: "❌ Google account",  tbl: "⚠️ Validator set",       w3ql: "✅ One transaction"  },
-                  { feature: "Per-record access control", pg: "⚠️ Row-level (server)", mongo: "⚠️ Field-level (server)", fire: "⚠️ Rules (server)", tbl: "❌ Table-level only", w3ql: "✅ On-chain per key" },
-                  { feature: "Gasless writes (relay)",  pg: "✅ Native",          mongo: "✅ Native",         fire: "✅ Native",          tbl: "❌ User pays gas",       w3ql: "✅ Meta-tx relay"    },
-                  { feature: "SQL-style schema",        pg: "✅ Full SQL",        mongo: "❌ Schema-less",    fire: "❌ NoSQL rules",     tbl: "✅ SQLite subset",       w3ql: "✅ SQL-like"         },
-                  { feature: "No vendor lock-in",       pg: "⚠️ DB engine",       mongo: "⚠️ BSON format",   fire: "❌ Google stack",    tbl: "⚠️ Tableland protocol",  w3ql: "✅ Open contracts"   },
-                  { feature: "Self-hostable",           pg: "✅ Yes",             mongo: "✅ Yes",            fire: "❌ No",              tbl: "❌ No",                  w3ql: "✅ Deploy your own"  },
-                  { feature: "No server / zero infra",  pg: "❌ Requires server", mongo: "❌ Requires server",fire: "✅ Managed",         tbl: "⚠️ Off-chain nodes",     w3ql: "✅ Fully on-chain"   },
-                  { feature: "Programmable with SDK",   pg: "✅ Many clients",    mongo: "✅ Official SDK",   fire: "✅ Official SDK",    tbl: "⚠️ Limited",             w3ql: "✅ TypeScript SDK"   },
+                  { feature: "Data ownership",              pg: "❌ Server owner",        mongo: "❌ Atlas/cloud",       fire: "❌ Google",           tbl: "⚠️ Validators",          w3ql: "✅ Your wallet"         },
+                  { feature: "End-to-end encryption",       pg: "⚠️ TLS only",            mongo: "⚠️ TLS only",          fire: "⚠️ TLS only",         tbl: "❌ Plaintext on-chain",  w3ql: "✅ NaCl per-record"     },
+                  { feature: "Permissionless deploy",       pg: "❌ Infra required",      mongo: "❌ Atlas account",     fire: "❌ Google account",   tbl: "⚠️ Validator set",       w3ql: "✅ One transaction"     },
+                  { feature: "Per-record access control",   pg: "⚠️ Row-level (server)", mongo: "⚠️ Field-level (server)", fire: "⚠️ Rules (server)", tbl: "❌ Table-level only",   w3ql: "✅ On-chain per key"    },
+                  { feature: "Gated read access",           pg: "✅ Native ACL",          mongo: "✅ Native ACL",        fire: "✅ Security rules",   tbl: "❌ Always public",       w3ql: "✅ Owner-controlled"    },
+                  { feature: "Fault-tolerant batch writes", pg: "✅ Savepoints",          mongo: "✅ bulkWrite",         fire: "✅ Batched writes",   tbl: "❌ All-or-nothing",      w3ql: "✅ Per-op results"      },
+                  { feature: "Schema versioning",           pg: "✅ Migrations",          mongo: "⚠️ Manual",            fire: "❌ No schema",        tbl: "⚠️ Limited",             w3ql: "✅ On-chain versioned"  },
+                  { feature: "Gasless writes (relay)",      pg: "✅ Native",              mongo: "✅ Native",            fire: "✅ Native",           tbl: "❌ User pays gas",       w3ql: "✅ Meta-tx relay"       },
+                  { feature: "SQL-style schema",            pg: "✅ Full SQL",            mongo: "❌ Schema-less",       fire: "❌ NoSQL rules",      tbl: "✅ SQLite subset",       w3ql: "✅ SQL-like"            },
+                  { feature: "No vendor lock-in",           pg: "⚠️ DB engine",           mongo: "⚠️ BSON format",       fire: "❌ Google stack",     tbl: "⚠️ Tableland protocol",  w3ql: "✅ Open contracts"      },
+                  { feature: "Self-hostable",               pg: "✅ Yes",                 mongo: "✅ Yes",               fire: "❌ No",               tbl: "❌ No",                  w3ql: "✅ Deploy your own"     },
+                  { feature: "No server / zero infra",      pg: "❌ Requires server",     mongo: "❌ Requires server",   fire: "✅ Managed",          tbl: "⚠️ Off-chain nodes",     w3ql: "✅ Fully on-chain"      },
+                  { feature: "Programmable with SDK",       pg: "✅ Many clients",        mongo: "✅ Official SDK",      fire: "✅ Official SDK",     tbl: "⚠️ Limited",             w3ql: "✅ TypeScript SDK"      },
                 ].map((row, i) => (
                   <tr key={row.feature} className={`border-b border-zinc-100 ${i % 2 === 0 ? "" : "bg-zinc-50/50"}`}>
                     <td className="px-5 py-3 font-medium text-black text-xs">{row.feature}</td>

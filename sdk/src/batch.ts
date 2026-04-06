@@ -41,6 +41,7 @@ import {
   encryptKeyForSelf,
 }                                               from './crypto.js';
 import type { EncryptionKeypair }               from './crypto.js';
+import { BatchResult, BatchError }              from './errors.js';
 
 // ─────────────────────────────────────────────────────────────
 //  Multicall3 — deployed at the same address on all major EVM chains
@@ -62,9 +63,31 @@ type OpType = 'write' | 'update' | 'delete';
 
 interface StagedOp {
   type    : OpType;
-  target  : string;  // table contract address
-  callData: string;  // ABI-encoded call
+  target  : string;   // table contract address
+  callData: string;   // ABI-encoded call
+  key     : string;   // bytes32 record key — for result tracking
 }
+
+// ─────────────────────────────────────────────────────────────
+//  Revert reason decoder
+// ─────────────────────────────────────────────────────────────
+
+function decodeRevertReason(returnData: string, success: boolean): string | undefined {
+  if (success || !returnData || returnData === '0x') return undefined;
+  try {
+    // Standard Error(string) ABI selector: 0x08c379a0
+    if (returnData.startsWith('0x08c379a0')) {
+      const [msg] = ethers.AbiCoder.defaultAbiCoder().decode(
+        ['string'],
+        '0x' + returnData.slice(10),
+      );
+      return msg as string;
+    }
+  } catch { /* non-standard revert data */ }
+  return `raw: ${returnData.slice(0, 66)}`;
+}
+
+export { BatchResult, BatchError };
 
 // ─────────────────────────────────────────────────────────────
 //  Table ABI (minimal subset for encoding)
@@ -72,7 +95,7 @@ interface StagedOp {
 
 const TABLE_IFACE = new ethers.Interface([
   'function write(bytes32 key, bytes calldata ciphertext, bytes calldata encryptedKey) external',
-  'function update(bytes32 key, bytes calldata ciphertext, bytes calldata encryptedKey) external',
+  'function update(bytes32 key, bytes calldata ciphertext, bytes calldata encryptedKey, uint32 expectedVersion) external',
   'function deleteRecord(bytes32 key) external',
 ]);
 
@@ -109,37 +132,40 @@ export class BatchWriter {
    * Stage a write (new record).
    * Encrypts the plaintext synchronously before staging.
    */
-  async stageWrite(key: string, plaintext: string | Uint8Array): Promise<this> {
+  async stageWrite(key: string, plaintext: string | Uint8Array, tableAddress?: string): Promise<this> {
     const data         = toBytes(plaintext);
     const symKey       = generateSymmetricKey();
     const ciphertext   = encryptData(data, symKey);
     const encryptedKey = encryptKeyForSelf(symKey, this.keypair);
 
+    const target   = tableAddress ?? this.tableClient.tableAddress;
     const callData = TABLE_IFACE.encodeFunctionData('write', [key, ciphertext, encryptedKey]);
-    this.ops.push({ type: 'write', target: this.tableClient.tableAddress, callData });
+    this.ops.push({ type: 'write', target, callData, key });
     return this;
   }
 
   /**
    * Stage an update (overwrite existing record).
    */
-  async stageUpdate(key: string, plaintext: string | Uint8Array): Promise<this> {
+  async stageUpdate(key: string, plaintext: string | Uint8Array, tableAddress?: string): Promise<this> {
     const data         = toBytes(plaintext);
     const symKey       = generateSymmetricKey();
     const ciphertext   = encryptData(data, symKey);
     const encryptedKey = encryptKeyForSelf(symKey, this.keypair);
 
-    const callData = TABLE_IFACE.encodeFunctionData('update', [key, ciphertext, encryptedKey]);
-    this.ops.push({ type: 'update', target: this.tableClient.tableAddress, callData });
+    const target   = tableAddress ?? this.tableClient.tableAddress;
+    const callData = TABLE_IFACE.encodeFunctionData('update', [key, ciphertext, encryptedKey, 0]);
+    this.ops.push({ type: 'update', target, callData, key });
     return this;
   }
 
   /**
    * Stage a delete.
    */
-  stageDelete(key: string): this {
+  stageDelete(key: string, tableAddress?: string): this {
+    const target   = tableAddress ?? this.tableClient.tableAddress;
     const callData = TABLE_IFACE.encodeFunctionData('deleteRecord', [key]);
-    this.ops.push({ type: 'delete', target: this.tableClient.tableAddress, callData });
+    this.ops.push({ type: 'delete', target, callData, key });
     return this;
   }
 
@@ -159,8 +185,8 @@ export class BatchWriter {
    * @returns             The transaction receipt + per-call results.
    */
   async submit(allowFailure = true): Promise<{
-    receipt: ethers.TransactionReceipt;
-    results : { success: boolean; returnData: string }[];
+    receipt : ethers.TransactionReceipt;
+    results : BatchResult[];
   }> {
     if (this.ops.length === 0) throw new Error('BatchWriter: no operations staged');
 
@@ -170,20 +196,39 @@ export class BatchWriter {
       callData    : op.callData,
     }));
 
+    // Pre-flight simulation to capture per-call success/failure BEFORE spending gas.
+    // Using staticCall avoids any state mutation while giving us the return data.
+    let simResults: { success: boolean; returnData: string }[] = [];
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = await (this.multicall as any).aggregate3.staticCall(calls);
+      simResults = raw as { success: boolean; returnData: string }[];
+    } catch (simErr) {
+      if (!allowFailure) {
+        // Bail early — entire batch would revert; no gas wasted.
+        throw new BatchError('Batch would revert entirely (pre-flight check failed)', [], simErr);
+      }
+      // allowFailure=true: simulation threw (e.g. RPC issue), proceed anyway.
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tx      = await (this.multicall as any).aggregate3(calls);
     const receipt = await tx.wait() as ethers.TransactionReceipt;
 
-    // Decode return data
-    const results: { success: boolean; returnData: string }[] = [];
-    for (const log of receipt.logs) {
-      // The aggregate3 return is in the function call return, not logs.
-      // We rely on success/failure from receipt status.
-      void log;
-    }
-
-    // Clear staged ops after submit
+    const opsSnapshot = this.ops.slice(); // capture before clearing
     this.ops = [];
+
+    const results: BatchResult[] = opsSnapshot.map((op, i) => {
+      const sim = simResults[i];
+      return {
+        index     : i,
+        type      : op.type,
+        key       : op.key,
+        success   : sim?.success ?? true,
+        returnData: sim?.returnData ?? '0x',
+        error     : sim ? decodeRevertReason(sim.returnData, sim.success) : undefined,
+      };
+    });
 
     return { receipt, results };
   }
@@ -202,15 +247,17 @@ export class BatchWriter {
     rows        : { key: string; plaintext: string }[],
     chunkSize   : number = 50,
     allowFailure: boolean = true,
-  ): Promise<ethers.TransactionReceipt[]> {
+  ): Promise<{ receipts: ethers.TransactionReceipt[]; failed: BatchResult[] }> {
     const receipts: ethers.TransactionReceipt[] = [];
+    const failed: BatchResult[] = [];
     for (let i = 0; i < rows.length; i += chunkSize) {
       const chunk = rows.slice(i, i + chunkSize);
       for (const row of chunk) await this.stageWrite(row.key, row.plaintext);
-      const { receipt } = await this.submit(allowFailure);
+      const { receipt, results } = await this.submit(allowFailure);
       receipts.push(receipt);
+      failed.push(...results.filter((r) => !r.success));
     }
-    return receipts;
+    return { receipts, failed };
   }
 }
 

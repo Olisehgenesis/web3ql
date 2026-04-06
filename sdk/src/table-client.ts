@@ -38,6 +38,7 @@ import {
   decryptKeyFromSender,
 }                                               from './crypto.js';
 import type { PublicKeyRegistryClient }         from './registry.js';
+import { AccessDeniedError, DecryptionError }   from './errors.js';
 
 // ─────────────────────────────────────────────────────────────
 //  Types
@@ -64,8 +65,12 @@ const TABLE_ABI = [
   // core
   'function write(bytes32 key, bytes calldata ciphertext, bytes calldata encryptedKey) external',
   'function read(bytes32 key) external view returns (bytes memory ciphertext, bool deleted, uint256 version, uint256 updatedAt, address owner)',
-  'function update(bytes32 key, bytes calldata ciphertext, bytes calldata encryptedKey) external',
+  'function update(bytes32 key, bytes calldata ciphertext, bytes calldata encryptedKey, uint32 expectedVersion) external',
   'function deleteRecord(bytes32 key) external',
+  // schema
+  'function schemaVersion() external view returns (uint32)',
+  'function updateSchema(bytes calldata newSchemaBytes) external',
+  'function setGatedRead(bool gated) external',
   // key management
   'function getMyEncryptedKey(bytes32 key) external view returns (bytes memory)',
   // access control
@@ -83,6 +88,12 @@ const TABLE_ABI = [
   'function getActiveOwnerRecords(address addr, uint256 start, uint256 limit) external view returns (bytes32[] memory)',
   // table metadata
   'function tableName() external view returns (string memory)',
+  // table-level write access control
+  'function addTableWriter(address writer) external',
+  'function removeTableWriter(address writer) external',
+  'function setRestrictedWrites(bool restricted) external',
+  'function tableWriters(address writer) external view returns (bool)',
+  'function restrictedWrites() external view returns (bool)',
 ] as const;
 
 // ─────────────────────────────────────────────────────────────
@@ -181,10 +192,17 @@ export class EncryptedTableClient {
    * Read and decrypt a record — returns raw bytes.
    */
   async readBytes(key: string): Promise<Uint8Array> {
-    const raw         = await this.readRaw(key);
-    const encKey      = await this.getMyEncryptedKey(key);
-    const symKey      = decryptKeyForSelf(encKey, this.keypair);
-    return decryptData(raw.ciphertext, symKey);
+    const raw    = await this.readRaw(key);
+    const encKey = await this.getMyEncryptedKey(key);
+    if (!encKey || encKey.length === 0) {
+      throw new AccessDeniedError(key);
+    }
+    try {
+      const symKey = decryptKeyForSelf(encKey, this.keypair);
+      return decryptData(raw.ciphertext, symKey);
+    } catch {
+      throw new DecryptionError(key);
+    }
   }
 
   /**
@@ -212,14 +230,15 @@ export class EncryptedTableClient {
    * if collaborators need access to the updated version.
    */
   async updateRaw(
-    key       : string,
-    plaintext : string | Uint8Array,
+    key              : string,
+    plaintext        : string | Uint8Array,
+    expectedVersion  : number = 0,
   ): Promise<ethers.TransactionReceipt> {
     const data         = toBytes(plaintext);
     const symKey       = generateSymmetricKey();
     const ciphertext   = encryptData(data, symKey);
     const encryptedKey = encryptKeyForSelf(symKey, this.keypair);
-    const tx = await this.c.update(key, ciphertext, encryptedKey);
+    const tx = await this.c.update(key, ciphertext, encryptedKey, expectedVersion);
     return tx.wait();
   }
 
@@ -375,6 +394,61 @@ export class EncryptedTableClient {
   /** Total number of records written by `addr` (including deleted). */
   async ownerRecordCount(addr: string): Promise<bigint> {
     return this.c.ownerRecordCount(addr) as Promise<bigint>;
+  }
+
+  // ── Table-level write access control ───────────────────────
+
+  /**
+   * Add an address to this table's writer allowlist.
+   * Only takes effect when restrictedWrites = true.
+   * Only the table owner can call this.
+   */
+  async addTableWriter(writer: string): Promise<ethers.TransactionReceipt> {
+    const tx = await this.c.addTableWriter(writer);
+    return tx.wait();
+  }
+
+  /**
+   * Remove an address from this table's writer allowlist.
+   */
+  async removeTableWriter(writer: string): Promise<ethers.TransactionReceipt> {
+    const tx = await this.c.removeTableWriter(writer);
+    return tx.wait();
+  }
+
+  /**
+   * Toggle restricted write mode.
+   *   false (default) — open/public table, anyone can write.
+   *   true            — only allowlisted writers can write.
+   */
+  async setRestrictedWrites(restricted: boolean): Promise<ethers.TransactionReceipt> {
+    const tx = await this.c.setRestrictedWrites(restricted);
+    return tx.wait();
+  }
+
+  /** Check whether an address is in the writer allowlist. */
+  async isTableWriter(writer: string): Promise<boolean> {
+    return this.c.tableWriters(writer) as Promise<boolean>;
+  }
+
+  /** Check whether this table has restricted writes enabled. */
+  async isRestrictedWrites(): Promise<boolean> {
+    return this.c.restrictedWrites() as Promise<boolean>;
+  }
+
+  /** Read the current schema version from the contract (0 for pre-versioned tables). */
+  async getSchemaVersion(): Promise<number> {
+    try {
+      return Number(await this.c.schemaVersion());
+    } catch {
+      return 0; // contract pre-dates schemaVersion
+    }
+  }
+
+  /** Enable or disable gated reads (only record owners/collaborators can read). */
+  async setGatedRead(gated: boolean): Promise<ethers.TransactionReceipt> {
+    const tx = await this.c.setGatedRead(gated);
+    return tx.wait();
   }
 }
 

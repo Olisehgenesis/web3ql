@@ -1,0 +1,12 @@
+{
+  "deployedAt": "2026-04-05T16:05:35.932Z",
+  "network": "celo",
+  "chainId": 42220,
+  "deployer": "0xB8f936be2B12406391B4232647593Cdb62dF2203",
+  "factoryAddress": "0x3ed8a3FFDE93f837a6CcFacd4a0684087c0DA4df",
+  "registryAddress": "0x349325F2D893a2493f78d873287E07175d32fde9",
+  "databaseImpl": "0x804bb08f7Ede7Ae94B955B08F1e30c56243bEB7F",
+  "tableImpl": "0x57947893a83AECE5FbbbbbE2379942BE8122A14D",
+  "cloudDatabase": "0xb7387db11622803626134ECE42FCb18Bf9Bf414C",
+  "wireAddress": null
+}
