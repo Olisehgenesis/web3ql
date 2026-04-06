@@ -80,10 +80,16 @@ async function main() {
   const databaseImplAddress = await databaseImpl.getAddress();
   console.log(`  ${pad('Database impl')}  : ${databaseImplAddress}`);
 
+  const PublicTableImpl = await ethers.getContractFactory('Web3QLPublicTable');
+  const publicTableImpl = await PublicTableImpl.deploy();
+  await publicTableImpl.waitForDeployment();
+  const publicTableImplAddress = await publicTableImpl.getAddress();
+  console.log(`  ${pad('PublicTable impl')}  : ${publicTableImplAddress}`);
+
   const FactoryF  = await ethers.getContractFactory('Web3QLFactory');
   const factory   = await upgrades.deployProxy(
     FactoryF,
-    [deployer.address, databaseImplAddress, tableImplAddress],
+    [deployer.address, databaseImplAddress, tableImplAddress, publicTableImplAddress],
     { kind: 'uups', initializer: 'initialize' },
   );
   await factory.waitForDeployment();
@@ -192,11 +198,12 @@ async function main() {
     : {};
 
   existing[networkLabel] = {
-    factoryAddress  : factoryAddress,
-    databaseImpl    : databaseImplAddress,
-    tableImpl       : tableImplAddress,
-    registryAddress : registryAddress,
-    cloudDatabase   : cloudDbAddress,
+    factoryAddress      : factoryAddress,
+    databaseImpl        : databaseImplAddress,
+    tableImpl           : tableImplAddress,
+    publicTableImpl     : publicTableImplAddress,
+    registryAddress     : registryAddress,
+    cloudDatabase       : cloudDbAddress,
     ...(wireAddress ? { wireAddress } : {}),
     deployedAt      : timestamp,
     deployer        : deployer.address,
@@ -214,8 +221,9 @@ async function main() {
     // Step 1
     factoryAddress,
     registryAddress,
-    databaseImpl    : databaseImplAddress,
-    tableImpl       : tableImplAddress,
+    databaseImpl        : databaseImplAddress,
+    tableImpl           : tableImplAddress,
+    publicTableImpl     : publicTableImplAddress,
     // Step 2
     cloudDatabase   : cloudDbAddress,
     // Step 3

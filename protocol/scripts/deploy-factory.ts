@@ -50,12 +50,20 @@ async function main() {
   const databaseImplAddress = await databaseImpl.getAddress();
   console.log(`  Web3QLDatabase impl: ${databaseImplAddress}`);
 
-  // ── 3. Deploy Web3QLFactory as UUPS proxy ─────────────────────
+  // ── 3. Deploy Web3QLPublicTable implementation ────────────────
+  console.log('Deploying Web3QLPublicTable implementation …');
+  const PublicTableImpl = await ethers.getContractFactory('Web3QLPublicTable');
+  const publicTableImpl = await PublicTableImpl.deploy();
+  await publicTableImpl.waitForDeployment();
+  const publicTableImplAddress = await publicTableImpl.getAddress();
+  console.log(`  Web3QLPublicTable impl: ${publicTableImplAddress}`);
+
+  // ── 4. Deploy Web3QLFactory as UUPS proxy ─────────────────────
   console.log('Deploying Web3QLFactory proxy (UUPS) …');
   const Factory = await ethers.getContractFactory('Web3QLFactory');
   const factory = await upgrades.deployProxy(
     Factory,
-    [deployer.address, databaseImplAddress, tableImplAddress],
+    [deployer.address, databaseImplAddress, tableImplAddress, publicTableImplAddress],
     { kind: 'uups', initializer: 'initialize' }
   );
   await factory.waitForDeployment();
@@ -80,14 +88,15 @@ async function main() {
   const datePart     = timestamp.slice(0, 10); // YYYY-MM-DD
 
   const deployment = {
-    deployedAt      : timestamp,
-    network         : networkLabel,
-    chainId         : Number(network.chainId),
-    deployer        : deployer.address,
-    factoryAddress  : factoryAddress,
-    databaseImpl    : databaseImplAddress,
-    tableImpl       : tableImplAddress,
-    registryAddress : registryAddress,
+    deployedAt          : timestamp,
+    network             : networkLabel,
+    chainId             : Number(network.chainId),
+    deployer            : deployer.address,
+    factoryAddress      : factoryAddress,
+    databaseImpl        : databaseImplAddress,
+    tableImpl           : tableImplAddress,
+    publicTableImpl     : publicTableImplAddress,
+    registryAddress     : registryAddress,
   };
 
   // Write per-deployment file
@@ -104,12 +113,13 @@ async function main() {
     : {};
 
   existing[networkLabel] = {
-    factoryAddress  : factoryAddress,
-    databaseImpl    : databaseImplAddress,
-    tableImpl       : tableImplAddress,
-    registryAddress : registryAddress,
-    deployedAt      : timestamp,
-    deployer        : deployer.address,
+    factoryAddress      : factoryAddress,
+    databaseImpl        : databaseImplAddress,
+    tableImpl           : tableImplAddress,
+    publicTableImpl     : publicTableImplAddress,
+    registryAddress     : registryAddress,
+    deployedAt          : timestamp,
+    deployer            : deployer.address,
   };
 
   fs.writeFileSync(configPath, JSON.stringify(existing, null, 2));

@@ -159,6 +159,23 @@ export type {
   PublicFindManyOptions,
 }                                                     from './public-table-client.js';
 
+// ── Typed public table (Prisma-style API, no encryption) ──────
+export { TypedPublicTableClient }                     from './typed-public-table.js';
+export type {
+  PublicWhereTuple,
+  PublicFindManyQueryOptions,
+  PublicRecordWithMeta,
+}                                                     from './typed-public-table.js';
+
+// ── Built-in public schemas: Project + Campaign ───────────────
+export {
+  projectSchema,
+  projectMigrations,
+  campaignSchema,
+  campaignMigrations,
+}                                                     from './public-schemas.js';
+export type { Project, Campaign }                     from './public-schemas.js';
+
 // ── v1.2 Schema management ────────────────────────────────────
 export {
   SchemaManager,

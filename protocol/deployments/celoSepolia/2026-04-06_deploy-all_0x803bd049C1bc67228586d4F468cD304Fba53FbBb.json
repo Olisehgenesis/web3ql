@@ -1,0 +1,13 @@
+{
+  "deployedAt": "2026-04-06T09:07:25.147Z",
+  "network": "celoSepolia",
+  "chainId": 11142220,
+  "deployer": "0xB8f936be2B12406391B4232647593Cdb62dF2203",
+  "factoryAddress": "0x803bd049C1bc67228586d4F468cD304Fba53FbBb",
+  "registryAddress": "0xF414eCb722cc01567516D945eA81cBbdCd130be1",
+  "databaseImpl": "0x4CA8fDB5A1387aB8Ce8ACd2094407d2F5EFDC712",
+  "tableImpl": "0xeFca20A44cB5A3633d4577b68cc877C9347C9382",
+  "publicTableImpl": "0x6363368653f1f43c05243Ef587920EBea35085EA",
+  "cloudDatabase": "0x97cb6f391f7d0428f2255867348c947934B543B8",
+  "wireAddress": null
+}

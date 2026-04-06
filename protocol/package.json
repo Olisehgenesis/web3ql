@@ -12,9 +12,9 @@
   ],
   "license": "MIT",
   "scripts": {
-    "compile": "hardhat compile",
-    "test": "hardhat test",
-    "test:unit": "node --import tsx --test test/compiler.test.ts",
+    "compile": "dotenvx run -- hardhat compile",
+    "test": "dotenvx run -- hardhat test",
+    "test:unit": "dotenvx run -- node --import tsx --test test/compiler.test.ts",
     "deploy:local": "dotenvx run -- hardhat run scripts/deploy-factory.ts --network localhost",
     "deploy:sepolia": "dotenvx run -- hardhat run scripts/deploy-factory.ts --network celoSepolia",
     "deploy:celo": "dotenvx run -- hardhat run scripts/deploy-factory.ts --network celo",
